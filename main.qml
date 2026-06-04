@@ -259,12 +259,12 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         Text { text: "✦ Gemini Workspace Core"; color: textMain; font.bold: true; font.pixelSize: 13 }
                                         Item { Layout.fillWidth: true }
-                                        Button { text: "New 💬"; onClicked: vesselManager.selectConversation("") }
+                                        Button { text: "New 💬"; onClicked: vesselManager.newConversation() }
                                     }
 
                                     Text { text: "Recent Chats"; color: textMuted; font.pixelSize: 11; font.bold: true; Layout.topMargin: 5 }
                                     ScrollView {
-                                        Layout.fillWidth: true; Layout.preferredHeight: parent.height * 0.35; clip: true
+                                        Layout.fillWidth: true; Layout.fillHeight: true; clip: true
                                         ListView {
                                             id: recentChatsList; width: parent.width; spacing: 2
                                             model: vesselManager.aiConversations
@@ -273,23 +273,6 @@ ApplicationWindow {
                                                 background: Rectangle { color: (vesselManager.activeChatId === modelData.id) ? "#2a2a2a" : (hovered ? "#222222" : "transparent"); radius: 4 }
                                                 contentItem: Text { text: "💬  " + modelData.title; color: textMain; font.pixelSize: 12; elide: Text.ElideRight }
                                                 onClicked: vesselManager.selectConversation(modelData.id)
-                                            }
-                                        }
-                                    }
-
-                                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: borderDark }
-
-                                    Text { text: "Generated Code & Droplets"; color: textMuted; font.pixelSize: 11; font.bold: true }
-                                    ScrollView {
-                                        Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                                        ListView {
-                                            id: generatedFilesList; width: parent.width; spacing: 2
-                                            model: vesselManager.aiGeneratedFiles
-                                            delegate: ItemDelegate {
-                                                width: generatedFilesList.width; height: 28
-                                                background: Rectangle { color: hovered ? "#222222" : "transparent"; radius: 4 }
-                                                contentItem: Text { text: "✨  " + modelData.name; color: "#a87ffb"; font.pixelSize: 12; elide: Text.ElideRight }
-                                                onClicked: print("Clicked artifact row map target: " + modelData.name)
                                             }
                                         }
                                     }
@@ -562,6 +545,50 @@ ApplicationWindow {
                                                     Text { text: modelData.text; color: textMain; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.MarkdownText }
                                                 }
                                             }
+
+                                            // Auto-scroll to bottom when new messages arrive
+                                            onCountChanged: {
+                                                var idx = count - 1
+                                                if (idx >= 0) {
+                                                    currentIndex = idx
+                                                    positionViewAtIndex(idx, ListView.End)
+                                                }
+                                            }
+                                        }
+
+                                        // Loading indicator with animated dots
+                                        Rectangle {
+                                            visible: vesselManager.aiProcessing
+                                            anchors.bottom: parent.bottom
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            height: 48
+                                            color: "transparent"
+
+                                            RowLayout {
+                                                id: dotRow
+                                                anchors.left: parent.left; anchors.leftMargin: 44
+                                                anchors.verticalCenter: parent.verticalCenter; spacing: 6
+
+                                                Repeater {
+                                                    model: 3
+                                                    Rectangle {
+                                                        width: 8; height: 8; radius: 4
+                                                        color: textMuted; opacity: 0.3
+                                                        SequentialAnimation on opacity {
+                                                            loops: Animation.Infinite
+                                                            running: vesselManager.aiProcessing
+                                                            PauseAnimation { duration: index * 300 }
+                                                            NumberAnimation {
+                                                                to: 1.0; duration: 400; easing: Easing.InOutQuad
+                                                            }
+                                                            NumberAnimation {
+                                                                to: 0.3; duration: 400; easing: Easing.InOutQuad
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
@@ -578,10 +605,18 @@ ApplicationWindow {
                                                 
                                                 onAccepted: {
                                                     if (aiConsoleInputBox.text.trim() !== "") {
-                                                        vesselManager.submitUserMessage(aiConsoleInputBox.text)
+                                                        vesselManager.submitUserMessage(aiConsoleInputBox.text, vesselManager.webSearchEnabled)
                                                         aiConsoleInputBox.text = ""
                                                     }
                                                 }
+                                            }
+
+                                            Switch {
+                                                id: webSearchSwitch
+                                                checked: vesselManager.webSearchEnabled
+                                                onCheckedChanged: vesselManager.webSearchEnabled = checked
+                                                ToolTip.visible: hovered
+                                                ToolTip.text: checked ? "Web search enabled (DuckDuckGo)" : "Web search disabled"
                                             }
 
                                             Button {
@@ -589,7 +624,7 @@ ApplicationWindow {
                                                 enabled: aiConsoleInputBox.text.trim() !== ""
                                                 background: Rectangle { color: parent.enabled ? accentColor : "#252525"; radius: 18 }
                                                 onClicked: {
-                                                    vesselManager.submitUserMessage(aiConsoleInputBox.text)
+                                                    vesselManager.submitUserMessage(aiConsoleInputBox.text, vesselManager.webSearchEnabled)
                                                     aiConsoleInputBox.text = ""
                                                 }
                                             }

@@ -170,46 +170,91 @@ def tag_search(db_path: Path, tag_names: list[str]) -> list[dict]:
         return []
 
 
+def get_all_documents(db_path: Path) -> list[dict]:
+    """Return every document row from the database — no search, no ranking."""
+    try:
+        conn = _open_db(db_path)
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT id, title, text_chunk FROM documents ORDER BY id"
+        ).fetchall()
+        conn.close()
+        return [
+            {"id": r[0], "title": r[1], "text_chunk": r[2]}
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"❌ get_all_documents error: {e}")
+        return []
+
+
 # ---------------------------------------------------------------------------
-# QUERY ENTRY POINT  (bridge from the Qt UI → query graph)
+# QUERY ENTRY POINT  (bridge from the Qt UI → LangGraph query engine)
 # ---------------------------------------------------------------------------
 
-def answerTo(vessel_path: str, query: str) -> str:
+def answerTo(
+    vessel_path: str,
+    query: str,
+    web_search_enabled: bool = False,
+    chat_history: list[dict] | None = None,
+) -> str:
     """
-    Answer a user query by searching all available indexes
-    (vector, BM25, tags) and returning a formatted result string.
+    Answer a user query by running the full LangGraph query pipeline:
+    classify → (vector + BM25 + optional web search) → generate answer.
 
-    For now this performs a combined BM25 + tag search.
-    The full LangGraph query engine can be integrated later.
+    Parameters
+    ----------
+    vessel_path : str
+        Path to the vessel root directory.
+    query : str
+        The user's question or request.
+    web_search_enabled : bool
+        Whether to also query DuckDuckGo for web results.
+    chat_history : list[dict] | None
+        Previous messages in the conversation, each with
+        ``{"sender": "user"|"model", "text": "..."}`` for conversational context.
+
+    Returns
+    -------
+    str
+        The final answer formatted for display.
     """
-    db_path = Path(vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+    from modules.query import app as query_app
 
-    # 1. BM25 keyword search
-    bm25_results = bm25_search(db_path, query, top_k=5)
+    # Normalise chat_history to Ollama format
+    history: list[dict] = []
+    if chat_history:
+        for msg in chat_history:
+            sender = msg.get("sender", "user")
+            role = "assistant" if sender == "model" else "user"
+            text = msg.get("text", "")
+            if text.strip():
+                history.append({"role": role, "content": text.strip()})
 
-    # 2. Tag lookup — try the query as tag terms
-    tag_terms = [t.strip().lower() for t in query.split() if len(t.strip()) > 2]
-    tag_results = tag_search(db_path, tag_terms)
+    try:
+        result = query_app.invoke({
+            "query": query,
+            "vessel_path": vessel_path,
+            "web_search_enabled": web_search_enabled,
+            "action_type": "",
+            "require_calculation": False,
+            "is_relevant": True,
+            "retrieved_contexts": [],
+            "generated_script_output": "",
+            "final_answer": "",
+            "topic_keyword": "",
+            "answer_quality_score": 0,
+            "refinement_attempts": 0,
+            "refinement_feedback": "",
+            "max_refinements": 3,
+            "chat_history": history,
+        })
 
-    # Merge results (dedup by id, BM25 results take priority)
-    seen = set()
-    merged = []
-    for r in bm25_results + tag_results:
-        if r["id"] not in seen:
-            seen.add(r["id"])
-            merged.append(r)
+        answer = result.get("final_answer", "")
+        return answer if answer else "*No answer could be generated.*"
 
-    if not merged:
-        return f"*No results found for:* “{query}”"
-
-    lines = [f"**Top {len(merged)} result(s) for:** “{query}”\n"]
-    for r in merged:
-        snippet = r["text_chunk"][:300].replace("\n", " ")
-        lines.append(f"📄 **{r['title']}**  (score {r.get('rank', '—'):.4f})")
-        lines.append(f"   {snippet}…")
-        lines.append("")
-
-    return "\n".join(lines)
+    except Exception as e:
+        return f"*Failed to run query pipeline:* `{e}`"
 
 
 # ---------------------------------------------------------------------------

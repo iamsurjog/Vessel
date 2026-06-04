@@ -1,15 +1,18 @@
-from mimetypes import init
 import sys
 import os
 import json
 import shutil
+import uuid
+import datetime
 import urllib.parse
+import threading
 from pathlib import Path
 from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl
 from PySide6.QtGui import QGuiApplication, QDesktopServices
 from PySide6.QtQml import QQmlApplicationEngine
 
 from modules import updateEmbeds, answerTo, initVessel, bm25_search, tag_search
+
 
 def get_storage_directory() -> Path:
     home = Path.home()
@@ -23,7 +26,13 @@ def get_storage_directory() -> Path:
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
 
+
 STORAGE_FILE = get_storage_directory() / "vessels_history.json"
+
+
+def _now_iso() -> str:
+    return datetime.datetime.now().isoformat(timespec="seconds")
+
 
 class VesselManager(QObject):
     vesselsChanged = Signal()
@@ -31,35 +40,146 @@ class VesselManager(QObject):
     materialsChanged = Signal()
     dropletsChanged = Signal()
     activeContentChanged = Signal()
+    conversationsChanged = Signal()
+    chatHistoryChanged = Signal()
+    webSearchEnabledChanged = Signal()
+    aiProcessingChanged = Signal()
+    aiResponseReceived = Signal(str)  # emitted from worker thread with final answer
 
     def __init__(self):
         super().__init__()
         self._vessels = []
         self._current_vessel_name = ""
-        self._current_vessel_path = ""
+        self._current_vessel_path = ""      # also used as the chat namespace
         self._materials_files = []
         self._droplets_tree = []
         self._active_file_text = ""
         self._active_file_name = ""
         self._active_file_path = ""
-        self.load_history()
-        # TODO: DELETE THESE
-        self._ai_conversations = [
-            {"id": "c1", "title": "Data Indexing Optimization"},
-            {"id": "c2", "title": "RAG Pipeline Debugging"},
-            {"id": "c3", "title": "Arch Config Shell Script"}
-        ]
-        self._ai_generated_files = [
-            {"name": "index_vessel.py", "type": "Python"},
-            {"name": "summary_notes.md", "type": "Markdown"},
-            {"name": "schema_v2.json", "type": "JSON"}
-        ]
-        self._active_chat_history = [
-            {"sender": "user", "text": "Can you review my vector retrieval loop?"},
-            {"sender": "model", "text": "I can help with that! For optimal RAG lookups, make sure you scale your embeddings and use a normalized dot-product distance index rather than brute-force cosine distance."}
-        ]
-        self._active_chat_id = "c1"
+        self._web_search_enabled = False
 
+        # Chat persistence — loaded from disk
+        self._conversations: list[dict] = []   # [{id, title, created_at, updated_at}, …]
+        self._active_chat_id = ""
+        self._active_chat_history: list[dict] = []   # [{sender, text}, …]
+
+        # Processing state for loading indicator
+        self._ai_processing = False
+
+        # Connect response signal to main thread handler
+        self.aiResponseReceived.connect(self._on_ai_response)
+
+        self.load_history()
+
+    # ------------------------------------------------------------------
+    # Chat persistence helpers
+    # ------------------------------------------------------------------
+    def _chats_dir(self) -> Path | None:
+        if not self._current_vessel_path:
+            return None
+        d = Path(self._current_vessel_path) / "AI" / ".sys" / "chats"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def _conv_path(self, conv_id: str) -> Path | None:
+        base = self._chats_dir()
+        if base is None:
+            return None
+        return base / f"{conv_id}.json"
+
+    def _load_conversations_from_disk(self):
+        """Scan the chats directory and rebuild the conversation list (latest first)."""
+        base = self._chats_dir()
+        if base is None:
+            self._conversations = []
+            self.conversationsChanged.emit()
+            return
+        convs = []
+        if base.exists():
+            for f in sorted(base.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                if f.suffix == ".json":
+                    try:
+                        data = json.loads(f.read_text(encoding="utf-8"))
+                        convs.append({
+                            "id": data.get("id", f.stem),
+                            "title": data.get("title", "Untitled"),
+                            "created_at": data.get("created_at", ""),
+                            "updated_at": data.get("updated_at", ""),
+                        })
+                    except Exception:
+                        pass
+        self._conversations = convs
+        self.conversationsChanged.emit()
+
+    def _load_chat_history(self, conv_id: str) -> list[dict]:
+        """Load all messages for a conversation from its JSON file."""
+        path = self._conv_path(conv_id)
+        if path is None or not path.exists():
+            return []
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data.get("messages", [])
+        except Exception:
+            return []
+
+    def _save_message(self, conv_id: str, sender: str, text: str):
+        """Append a message to a conversation file, creating it if needed."""
+        path = self._conv_path(conv_id)
+        now = _now_iso()
+        if path is None:
+            return
+
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            data = {
+                "id": conv_id,
+                "title": "New Chat",
+                "created_at": now,
+                "updated_at": now,
+                "messages": [],
+            }
+
+        data["messages"].append({
+            "sender": sender,
+            "text": text,
+            "created_at": now,
+        })
+        data["updated_at"] = now
+
+        # Auto-title: use the first user message as the title
+        if data["title"] == "New Chat" and sender == "user":
+            title = text.strip()[:60]
+            if len(text.strip()) > 60:
+                title += "…"
+            data["title"] = title
+
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        # Refresh the conversation list so the new title shows up
+        self._load_conversations_from_disk()
+
+    def _create_conversation(self) -> str:
+        """Create a blank conversation file and return its id."""
+        conv_id = f"conv_{uuid.uuid4().hex[:12]}"
+        path = self._conv_path(conv_id)
+        if path is None:
+            return ""
+        now = _now_iso()
+        data = {
+            "id": conv_id,
+            "title": "New Chat",
+            "created_at": now,
+            "updated_at": now,
+            "messages": [],
+        }
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        self._load_conversations_from_disk()
+        return conv_id
+
+    # ------------------------------------------------------------------
+    # Vessel load/save for the vessel registry
+    # ------------------------------------------------------------------
     def load_history(self):
         if STORAGE_FILE.exists():
             try:
@@ -75,7 +195,9 @@ class VesselManager(QObject):
         except Exception:
             pass
 
+    # ------------------------------------------------------------------
     # Core Global Properties
+    # ------------------------------------------------------------------
     @Property(list, notify=vesselsChanged)
     def vesselsList(self): return self._vessels
 
@@ -100,74 +222,122 @@ class VesselManager(QObject):
     @Property(str, notify=activeContentChanged)
     def activeFilePath(self): return self._active_file_path
 
+    @Property(bool, notify=webSearchEnabledChanged)
+    def webSearchEnabled(self): return self._web_search_enabled
 
-    aiConversationsChanged = Signal()
-    aiGeneratedFilesChanged = Signal()
-    activeChatChanged = Signal()
+    @webSearchEnabled.setter
+    def webSearchEnabled(self, enabled):
+        if self._web_search_enabled != enabled:
+            self._web_search_enabled = enabled
+            self.webSearchEnabledChanged.emit()
 
-    @Property(list, notify=aiConversationsChanged)
-    def aiConversations(self): return self._ai_conversations
+    @Property(bool, notify=aiProcessingChanged)
+    def aiProcessing(self):
+        return self._ai_processing
 
-    @Property(list, notify=aiGeneratedFilesChanged)
-    def aiGeneratedFiles(self): return self._ai_generated_files
+    # ------------------------------------------------------------------
+    # Chat properties & slots
+    # ------------------------------------------------------------------
+    @Property(list, notify=conversationsChanged)
+    def aiConversations(self): return self._conversations
 
-    @Property(list, notify=activeChatChanged)
+    @Property(list, notify=chatHistoryChanged)
     def activeChatHistory(self): return self._active_chat_history
 
-    @Property(str, notify=activeChatChanged)
+    @Property(str, notify=chatHistoryChanged)
     def activeChatId(self): return self._active_chat_id
+
+    @Slot()
+    def newConversation(self):
+        """Create a new empty conversation and switch to it."""
+        conv_id = self._create_conversation()
+        if conv_id:
+            self._active_chat_id = conv_id
+            self._active_chat_history = []
+            self.chatHistoryChanged.emit()
 
     @Slot(str)
     def selectConversation(self, chat_id):
-        """Switches the current conversation context view."""
+        """Load a conversation and display its history."""
         self._active_chat_id = chat_id
-        # Mock switching content based on target selection
-        if chat_id == "c1":
-            self._active_chat_history = [
-                {"sender": "user", "text": "Can you review my vector retrieval loop?"},
-                {"sender": "model", "text": "I can help with that! For optimal RAG lookups, make sure you scale your embeddings and use a normalized dot-product distance index rather than brute-force cosine distance."}
-            ]
-        elif chat_id == "c2":
-            self._active_chat_history = [
-                {"sender": "user", "text": "Why is my RAG getting context hallucinations?"},
-                {"sender": "model", "text": "Usually, that means your chunk size is too narrow or your top-k retrieval is pulling irrelevant documents. Try adding a reranking step."}
-            ]
-        else:
-            self._active_chat_history = []
-        self.activeChatChanged.emit()
+        self._active_chat_history = self._load_chat_history(chat_id)
+        self.chatHistoryChanged.emit()
 
-    @Slot(str)
-    def submitUserMessage(self, message):
-        """Appends user input and streams answers from the local RAG pipeline."""
-        if not message.strip(): 
+    @Slot(str, bool)
+    def submitUserMessage(self, message, web_search_enabled=False):
+        """Send a message, save it, get an AI response in a background thread."""
+        if not message.strip():
             return
-            
-        self._active_chat_history.append({"sender": "user", "text": message.strip()})
-        self.activeChatChanged.emit()
-        
+
+        # Auto-create a conversation if none is active
+        if not self._active_chat_id:
+            conv_id = self._create_conversation()
+            if not conv_id:
+                return
+            self._active_chat_id = conv_id
+            self._active_chat_history = []
+
+        msg_text = message.strip()
+        vessel_path = self._current_vessel_path
+
+        # Save user message immediately
+        self._save_message(self._active_chat_id, "user", msg_text)
+        self._active_chat_history.append({"sender": "user", "text": msg_text})
+        self.chatHistoryChanged.emit()
+
+        # Show loading state
+        self._ai_processing = True
+        self.aiProcessingChanged.emit()
+
+        # Extract previous messages for conversational context
+        # Exclude the current user message — it's already embedded in the prompt
+        chat_history = list(self._active_chat_history[:-1])
+
+        # Spawn background thread so the UI stays responsive
+        thread = threading.Thread(
+            target=self._process_ai_response,
+            args=(vessel_path, msg_text, web_search_enabled, chat_history),
+            daemon=True,
+        )
+        thread.start()
+
+    def _process_ai_response(self, vessel_path, msg_text, web_search_enabled, chat_history):
+        """Run answerTo in a background thread, emit result on main thread."""
         try:
-            # Route through the local RAG pipeline using the active vessel path
-            if self._current_vessel_path:
-                ai_response = answerTo(self._current_vessel_path, message.strip())
+            if vessel_path:
+                ai_response = answerTo(
+                    vessel_path, msg_text, web_search_enabled,
+                    chat_history=chat_history,
+                )
             else:
                 ai_response = "*No vessel is currently open. Please create or open a vessel first.*"
-            
+
             if not ai_response:
                 ai_response = "✦ *Gemini Core error: Empty inference buffer returned from background pipeline host.*"
         except Exception as e:
             ai_response = f"⚠️ *Failed to communicate with local RAG execution thread:* \n\n```\n{str(e)}\n ```"
 
+        # Emit signal — the handler runs on the main thread via Qt's signal-slot mechanism
+        self.aiResponseReceived.emit(ai_response)
+
+    def _on_ai_response(self, ai_response):
+        """Handle the AI response on the main thread (connected via signal)."""
+        self._ai_processing = False
+        self.aiProcessingChanged.emit()
+
+        self._save_message(self._active_chat_id, "model", ai_response)
         self._active_chat_history.append({"sender": "model", "text": ai_response})
-        self.activeChatChanged.emit()
+        self.chatHistoryChanged.emit()
 
     @Property(QUrl, notify=activeContentChanged)
-    def activeFileUrl(self): 
-        if not self._active_file_path: 
-            return QUrl() # Returns an empty valid URL object
-        # Sends a native Qt URL directly to the QML engine
+    def activeFileUrl(self):
+        if not self._active_file_path:
+            return QUrl()
         return QUrl.fromLocalFile(self._active_file_path)
 
-    # --- Disk Infrastructure Routines ---
+    # ------------------------------------------------------------------
+    # Disk Infrastructure Routines
+    # ------------------------------------------------------------------
     @Slot(str, str, result=bool)
     def createVessel(self, name: str, target_path: str):
         base_dir = Path(target_path.strip())
@@ -180,9 +350,11 @@ class VesselManager(QObject):
             (vessel_dir / ".vessel").mkdir(parents=True, exist_ok=True)
             _ = initVessel(vessel_dir)
 
-            
-            _ = (vessel_dir / "Droplets" / "Welcome.md").write_text("# Welcome to your Vessel\nThis note is a **Droplet**! You can write *Markdown* text here.", encoding="utf-8")
-            
+            _ = (vessel_dir / "Droplets" / "Welcome.md").write_text(
+                "# Welcome to your Vessel\nThis note is a **Droplet**! You can write *Markdown* text here.",
+                encoding="utf-8",
+            )
+
             entry = {"name": name.strip(), "path": absolute_path}
             if entry not in self._vessels:
                 self._vessels.append(entry)
@@ -201,27 +373,37 @@ class VesselManager(QObject):
             self._current_vessel_name = target.name
             self.refresh_files()
             self.currentVesselChanged.emit()
+            # Load chats for this vessel
+            self._load_conversations_from_disk()
+            if self._conversations:
+                self.selectConversation(self._conversations[0]["id"])
+            else:
+                self.newConversation()
 
     @Slot(str)
     def deleteVessel(self, path_to_remove):
         target_dir = Path(path_to_remove)
         if target_dir.exists() and target_dir.is_dir():
-            try: shutil.rmtree(target_dir)
-            except Exception: pass
+            try:
+                shutil.rmtree(target_dir)
+            except Exception:
+                pass
         self._vessels = [v for v in self._vessels if v["path"] != path_to_remove]
         self.save_history()
         self.vesselsChanged.emit()
 
     def refresh_files(self):
         target = Path(self._current_vessel_path)
-        # Materials Scanning
         try:
-            self._materials_files = [f.name for f in os.scandir(target / "Materials") if not f.name.startswith('.')]
+            self._materials_files = [
+                f.name
+                for f in os.scandir(target / "Materials")
+                if not f.name.startswith(".")
+            ]
             self.materialsChanged.emit()
         except Exception:
             self._materials_files = []
 
-        # Droplets Recursive Scan
         try:
             self._droplets_tree = self._build_tree(target / "Droplets")
             self.dropletsChanged.emit()
@@ -229,32 +411,38 @@ class VesselManager(QObject):
             self._droplets_tree = []
 
     def _build_tree(self, root_path: Path):
-        """Recursively builds a layout map of folders and Droplets with nesting depths."""
         items = []
-        if not root_path.exists(): return items
-        
-        # Sort so folders appear above files, alphabetically
-        entries = sorted(list(os.scandir(root_path)), key=lambda e: (e.is_file(), e.name.lower()))
-        
+        if not root_path.exists():
+            return items
+
+        entries = sorted(
+            list(os.scandir(root_path)),
+            key=lambda e: (e.is_file(), e.name.lower()),
+        )
+
         for entry in entries:
-            if entry.name.startswith('.'): continue
-            
-            # Calculate the nesting depth by counting path separators
-            relative_to_droplets = os.path.relpath(entry.path, Path(self._current_vessel_path) / "Droplets")
-            # If at the root of Droplets, depth is 0. If inside a folder, depth is 1, etc.
-            depth = 0 if relative_to_droplets == "." else len(Path(relative_to_droplets).parts) - 1
-            
+            if entry.name.startswith("."):
+                continue
+
+            relative_to_droplets = os.path.relpath(
+                entry.path, Path(self._current_vessel_path) / "Droplets"
+            )
+            depth = (
+                0
+                if relative_to_droplets == "."
+                else len(Path(relative_to_droplets).parts) - 1
+            )
+
             relative_to_vessel = os.path.relpath(entry.path, self._current_vessel_path)
-            
+
             if entry.is_dir():
                 items.append({
                     "name": entry.name,
                     "isFile": False,
                     "relPath": relative_to_vessel,
                     "absPath": entry.path,
-                    "depth": depth  # <-- PASS DEPTH TO QML
+                    "depth": depth,
                 })
-                # Recursively add subdirectories
                 items.extend(self._build_tree(Path(entry.path)))
             else:
                 items.append({
@@ -262,14 +450,15 @@ class VesselManager(QObject):
                     "isFile": True,
                     "relPath": relative_to_vessel,
                     "absPath": entry.path,
-                    "depth": depth  # <-- PASS DEPTH TO QML
+                    "depth": depth,
                 })
         return items
 
-    # --- Droplet Workspace Control Slots ---
+    # ------------------------------------------------------------------
+    # Droplet Workspace Control Slots
+    # ------------------------------------------------------------------
     @Slot(str)
     def loadDropletContent(self, abs_path):
-        """Reads note file text data into memory."""
         p = Path(abs_path)
         if p.exists() and p.is_file():
             try:
@@ -282,7 +471,6 @@ class VesselManager(QObject):
 
     @Slot(str, str)
     def saveActiveDroplet(self, abs_path, text):
-        """Saves current string updates live back down to storage."""
         if abs_path:
             try:
                 Path(abs_path).write_text(text, encoding="utf-8")
@@ -292,9 +480,7 @@ class VesselManager(QObject):
 
     @Slot(str, bool)
     def createNewAsset(self, parent_rel_path, is_folder):
-        """Creates an asset inside the Droplets tree subdirectories."""
         base_vessel = Path(self._current_vessel_path)
-        
         if parent_rel_path == "" or parent_rel_path == "Droplets":
             target_parent = base_vessel / "Droplets"
         else:
@@ -315,27 +501,27 @@ class VesselManager(QObject):
                 new_path = target_parent / f"Untitled_{count}.md"
                 count += 1
             new_path.write_text("# Untitled\n", encoding="utf-8")
-            
+
         self.refresh_files()
 
     @Slot(str, str, result=bool)
     @Slot(str, str, result=bool)
     def renameAsset(self, abs_path, new_name):
-        """Renames a file or directory on disk."""
         old_path = Path(abs_path)
         if not old_path.exists() or not new_name.strip():
             return False
-            
+
         validated_name = new_name.strip()
-        
-        # --- NEW: Allow HTML and TXT formats ---
+
         if old_path.is_file():
-            allowed_extensions = ('.md', '.html', '.txt')
-            if not any(validated_name.lower().endswith(ext) for ext in allowed_extensions):
-                validated_name += '.md'
+            allowed_extensions = (".md", ".html", ".txt")
+            if not any(
+                validated_name.lower().endswith(ext) for ext in allowed_extensions
+            ):
+                validated_name += ".md"
 
         new_path = old_path.parent / validated_name
-        
+
         if new_path.exists() and new_path != old_path:
             return False
         try:
@@ -348,14 +534,17 @@ class VesselManager(QObject):
             success = True
         except Exception:
             success = False
-        success = True # representation of your internal operation flag
-        
+        success = True
+
         if success:
             try:
-                from modules import bm25_search as _  # noqa — ensure modules loaded
+                from modules import bm25_search as _
                 from pathlib import Path as _P
                 import sqlite3
-                db_file = _P(self._current_vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+
+                db_file = (
+                    _P(self._current_vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+                )
                 if db_file.exists():
                     conn = sqlite3.connect(str(db_file))
                     conn.execute("PRAGMA foreign_keys = ON;")
@@ -365,28 +554,28 @@ class VesselManager(QObject):
                     )
                     conn.commit()
                     conn.close()
-                    print(f"📝 Updated document title: {old_path.name} → {new_path.name}")
+                    print(
+                        f"📝 Updated document title: {old_path.name} → {new_path.name}"
+                    )
             except Exception as e:
                 print(f"Info: Could not update document title on rename ({e})")
         return success
 
     @Slot(str)
     def handleMaterialClick(self, filename):
-        """Smart router: handles PDFs, Text/HTML inside the app, pushes others to OS."""
         target_path = Path(self._current_vessel_path) / "Materials" / filename
-        if not target_path.exists(): return
-        
+        if not target_path.exists():
+            return
+
         ext = filename.lower()
-        
-        # 1. Handle PDFs internally
-        if ext.endswith('.pdf'):
+
+        if ext.endswith(".pdf"):
             self._active_file_name = filename
             self._active_file_path = str(target_path.resolve())
-            self._active_file_text = "" 
+            self._active_file_text = ""
             self.activeContentChanged.emit()
-            
-        # 2. Handle HTML, Markdown, and Text internally
-        elif ext.endswith(('.html', '.md', '.txt', '.csv', '.json')):
+
+        elif ext.endswith((".html", ".md", ".txt", ".csv", ".json")):
             try:
                 self._active_file_text = target_path.read_text(encoding="utf-8")
                 self._active_file_name = filename
@@ -394,41 +583,37 @@ class VesselManager(QObject):
                 self.activeContentChanged.emit()
             except Exception as e:
                 print(f"Python Error reading material text: {e}")
-                
-        # 3. Fallback: Open Word, PPT, Images, etc., in the OS default apps
+
         else:
             file_url = QUrl.fromLocalFile(str(target_path.resolve()))
             QDesktopServices.openUrl(file_url)
 
     @Slot(str)
     def autoSaveDroplet(self, text):
-        """Saves current string text modifications instantly to disk as the user types."""
-        # Only attempt to write if there is a file actively loaded in the viewport
         if self._active_file_path:
             try:
                 with open(self._active_file_path, "w", encoding="utf-8") as f:
                     f.write(text)
-                # Keep our inner data copy matched up with the visual text canvas
                 self._active_file_text = text
             except Exception as e:
                 print(f"Python Error during auto-save: {e}")
 
     @Slot(str)
     def removeAsset(self, abs_path):
-        """Deletes a folder or file completely from the local workspace."""
         p = Path(abs_path)
         if p.exists():
             try:
-                if p.is_dir(): shutil.rmtree(p)
-                else: p.unlink()
-                
-                # Reset viewport state if active file was dropped
+                if p.is_dir():
+                    shutil.rmtree(p)
+                else:
+                    p.unlink()
+
                 if str(p.resolve()) == self._active_file_path:
                     self._active_file_text = ""
                     self._active_file_name = ""
                     self._active_file_path = ""
                     self.activeContentChanged.emit()
-                    
+
                 self.refresh_files()
             except Exception:
                 pass
@@ -438,10 +623,16 @@ class VesselManager(QObject):
         clean_path = raw_source_path.strip()
         clean_path = urllib.parse.unquote(clean_path)
         if clean_path.startswith("file://"):
-            clean_path = clean_path.replace("file:///", "") if os.name == "nt" else clean_path.replace("file://", "")
-            if os.name == "nt": clean_path = clean_path.replace("/", "\\")
+            clean_path = (
+                clean_path.replace("file:///", "")
+                if os.name == "nt"
+                else clean_path.replace("file://", "")
+            )
+            if os.name == "nt":
+                clean_path = clean_path.replace("/", "\\")
         source = Path(clean_path)
-        if not source.exists(): return False
+        if not source.exists():
+            return False
         try:
             dest = Path(self._current_vessel_path) / "Materials" / source.name
             shutil.copy2(source, dest)
@@ -452,8 +643,8 @@ class VesselManager(QObject):
                 print(f"Backend Error running updateEmbeds on upload: {e}")
             self.refresh_files()
             return True
-        except Exception: return False
-            
+        except Exception:
+            return False
 
     @Slot()
     def closeWorkspace(self):
@@ -464,8 +655,13 @@ class VesselManager(QObject):
         self._active_file_text = ""
         self._active_file_name = ""
         self._active_file_path = ""
+        self._conversations = []
+        self._active_chat_id = ""
+        self._active_chat_history = []
         self.currentVesselChanged.emit()
         self.activeContentChanged.emit()
+        self.conversationsChanged.emit()
+        self.chatHistoryChanged.emit()
 
 if __name__ == "__main__":
     app = QGuiApplication(sys.argv)
