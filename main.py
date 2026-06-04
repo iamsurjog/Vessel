@@ -28,6 +28,37 @@ def get_storage_directory() -> Path:
 
 
 STORAGE_FILE = get_storage_directory() / "vessels_history.json"
+PROVIDER_CONFIG_FILE = get_storage_directory() / "provider_config.json"
+
+
+def _default_provider_config() -> dict:
+    return {
+        "provider": "ollama",
+        "ollama_model": "tinyllama:1.1b",
+        "openai_api_key": "",
+        "openai_model": "gpt-4o-mini",
+        "anthropic_api_key": "",
+        "anthropic_model": "claude-3-haiku-20240307",
+        "google_api_key": "",
+        "google_model": "gemini-2.0-flash",
+    }
+
+
+def _load_provider_config() -> dict:
+    cfg = _default_provider_config()
+    if PROVIDER_CONFIG_FILE.exists():
+        try:
+            data = json.loads(PROVIDER_CONFIG_FILE.read_text(encoding="utf-8"))
+            cfg.update(data)
+        except Exception:
+            pass
+    return cfg
+
+
+def _save_provider_config(cfg: dict):
+    PROVIDER_CONFIG_FILE.write_text(
+        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def _now_iso() -> str:
@@ -45,6 +76,7 @@ class VesselManager(QObject):
     webSearchEnabledChanged = Signal()
     aiProcessingChanged = Signal()
     aiResponseReceived = Signal(str)  # emitted from worker thread with final answer
+    providerConfigChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -62,6 +94,9 @@ class VesselManager(QObject):
         self._conversations: list[dict] = []   # [{id, title, created_at, updated_at}, …]
         self._active_chat_id = ""
         self._active_chat_history: list[dict] = []   # [{sender, text}, …]
+
+        # Provider configuration (persisted)
+        self._provider_config = _load_provider_config()
 
         # Processing state for loading indicator
         self._ai_processing = False
@@ -231,6 +266,61 @@ class VesselManager(QObject):
             self._web_search_enabled = enabled
             self.webSearchEnabledChanged.emit()
 
+    # ------------------------------------------------------------------
+    # Provider configuration properties
+    # ------------------------------------------------------------------
+    @Property(str, notify=providerConfigChanged)
+    def providerName(self):
+        return self._provider_config.get("provider", "ollama")
+
+    @Property(str, notify=providerConfigChanged)
+    def ollamaModel(self):
+        return self._provider_config.get("ollama_model", "tinyllama:1.1b")
+
+    @Property(str, notify=providerConfigChanged)
+    def openaiApiKey(self):
+        return self._provider_config.get("openai_api_key", "")
+
+    @Property(str, notify=providerConfigChanged)
+    def anthropicApiKey(self):
+        return self._provider_config.get("anthropic_api_key", "")
+
+    @Property(str, notify=providerConfigChanged)
+    def googleApiKey(self):
+        return self._provider_config.get("google_api_key", "")
+
+    @Slot(str)
+    def setProviderName(self, name):
+        if self._provider_config.get("provider") != name:
+            self._provider_config["provider"] = name
+            _save_provider_config(self._provider_config)
+            self.providerConfigChanged.emit()
+
+    @Slot(str)
+    def setOllamaModel(self, model):
+        if self._provider_config.get("ollama_model") != model:
+            self._provider_config["ollama_model"] = model
+            _save_provider_config(self._provider_config)
+            self.providerConfigChanged.emit()
+
+    @Slot(str)
+    def setOpenaiApiKey(self, key):
+        self._provider_config["openai_api_key"] = key
+        _save_provider_config(self._provider_config)
+        self.providerConfigChanged.emit()
+
+    @Slot(str)
+    def setAnthropicApiKey(self, key):
+        self._provider_config["anthropic_api_key"] = key
+        _save_provider_config(self._provider_config)
+        self.providerConfigChanged.emit()
+
+    @Slot(str)
+    def setGoogleApiKey(self, key):
+        self._provider_config["google_api_key"] = key
+        _save_provider_config(self._provider_config)
+        self.providerConfigChanged.emit()
+
     @Property(bool, notify=aiProcessingChanged)
     def aiProcessing(self):
         return self._ai_processing
@@ -279,6 +369,7 @@ class VesselManager(QObject):
 
         msg_text = message.strip()
         vessel_path = self._current_vessel_path
+        provider_config = dict(self._provider_config)
 
         # Save user message immediately
         self._save_message(self._active_chat_id, "user", msg_text)
@@ -296,24 +387,25 @@ class VesselManager(QObject):
         # Spawn background thread so the UI stays responsive
         thread = threading.Thread(
             target=self._process_ai_response,
-            args=(vessel_path, msg_text, web_search_enabled, chat_history),
+            args=(vessel_path, msg_text, web_search_enabled, chat_history, provider_config),
             daemon=True,
         )
         thread.start()
 
-    def _process_ai_response(self, vessel_path, msg_text, web_search_enabled, chat_history):
+    def _process_ai_response(self, vessel_path, msg_text, web_search_enabled, chat_history, provider_config):
         """Run answerTo in a background thread, emit result on main thread."""
         try:
             if vessel_path:
                 ai_response = answerTo(
                     vessel_path, msg_text, web_search_enabled,
                     chat_history=chat_history,
+                    provider_config=provider_config,
                 )
             else:
                 ai_response = "*No vessel is currently open. Please create or open a vessel first.*"
 
             if not ai_response:
-                ai_response = "✦ *Gemini Core error: Empty inference buffer returned from background pipeline host.*"
+                ai_response = "✦ *AI Core error: Empty inference buffer returned from background pipeline host.*"
         except Exception as e:
             ai_response = f"⚠️ *Failed to communicate with local RAG execution thread:* \n\n```\n{str(e)}\n ```"
 

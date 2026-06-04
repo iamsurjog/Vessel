@@ -38,6 +38,9 @@ class QueryEngineState(TypedDict):
     refinement_feedback: str      # specific feedback from quality check
     max_refinements: int          # max refinement iterations (default 3)
 
+    # Provider config (ollama | openai | anthropic | google)
+    provider_config: dict
+
 
 # ==========================================
 # 2. OLLAMA HELPERS
@@ -105,6 +108,207 @@ def _ollama_chat(
     return None
 
 
+# ---------------------------------------------------------------------------
+# Multi-provider chat API functions
+# ---------------------------------------------------------------------------
+
+def _openai_chat(
+    messages: list[dict],
+    api_key: str,
+    model: str = "gpt-4o-mini",
+    timeout: int = 120,
+) -> str | None:
+    """Call OpenAI chat API."""
+    if not api_key:
+        return None
+    try:
+        import httpx, json
+        body = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+        }
+        resp = httpx.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=timeout,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        choice = data.get("choices", [{}])[0]
+        return (choice.get("message") or {}).get("content", "").strip() or None
+    except Exception:
+        return None
+
+
+def _anthropic_chat(
+    messages: list[dict],
+    api_key: str,
+    model: str = "claude-3-haiku-20240307",
+    timeout: int = 120,
+) -> str | None:
+    """Call Anthropic chat API.
+
+    Anthropic uses a separate ``system`` field for system messages
+    and a different message format for the conversation.
+    """
+    if not api_key:
+        return None
+    try:
+        import httpx, json
+
+        # Extract system message (if present) — Anthropic uses a top-level field
+        system_prompt = ""
+        filtered_messages: list[dict] = []
+        for m in messages:
+            if m.get("role") == "system":
+                system_prompt = (system_prompt + "\n" + m["content"]).strip()
+            else:
+                filtered_messages.append(m)
+
+        body: dict = {
+            "model": model,
+            "max_tokens": 4096,
+            "messages": filtered_messages,
+        }
+        if system_prompt:
+            body["system"] = system_prompt
+
+        resp = httpx.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=timeout,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        content_blocks = data.get("content", [])
+        texts = [b.get("text", "") for b in content_blocks if b.get("type") == "text"]
+        return "".join(texts).strip() or None
+    except Exception:
+        return None
+
+
+def _gemini_chat(
+    messages: list[dict],
+    api_key: str,
+    model: str = "gemini-2.0-flash",
+    timeout: int = 120,
+) -> str | None:
+    """Call Google Gemini chat API.
+
+    Gemini uses ``contents[{role, parts}]`` format.
+    System instructions go in a separate top-level field.
+    """
+    if not api_key:
+        return None
+    try:
+        import httpx, json
+
+        # Separate system instruction from conversation
+        system_instruction = ""
+        contents: list[dict] = []
+        for m in messages:
+            role = m.get("role", "")
+            content = m.get("content", "")
+            if role == "system":
+                system_instruction = (
+                    system_instruction + "\n" + content
+                ).strip()
+            else:
+                gemini_role = "model" if role == "assistant" else "user"
+                contents.append({
+                    "role": gemini_role,
+                    "parts": [{"text": content}],
+                })
+
+        body: dict = {"contents": contents}
+        if system_instruction:
+            body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
+        resp = httpx.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+            params={"key": api_key},
+            json=body,
+            timeout=timeout,
+        )
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        if not candidates:
+            return None
+        parts = (candidates[0].get("content") or {}).get("parts", [])
+        texts = [p.get("text", "") for p in parts]
+        return "".join(texts).strip() or None
+    except Exception:
+        return None
+
+
+def _llm_chat(
+    messages: list[dict],
+    provider_config: dict,
+    timeout: int = 120,
+) -> str | None:
+    """Route a chat completion to the configured provider.
+
+    Falls back to Ollama when no other provider is configured.
+    """
+    provider = provider_config.get("provider", "ollama")
+
+    if provider == "openai":
+        return _openai_chat(
+            messages,
+            api_key=provider_config.get("openai_api_key", ""),
+            model=provider_config.get("openai_model", "gpt-4o-mini"),
+            timeout=timeout,
+        )
+    if provider == "anthropic":
+        return _anthropic_chat(
+            messages,
+            api_key=provider_config.get("anthropic_api_key", ""),
+            model=provider_config.get("anthropic_model", "claude-3-haiku-20240307"),
+            timeout=timeout,
+        )
+    if provider == "google":
+        return _gemini_chat(
+            messages,
+            api_key=provider_config.get("google_api_key", ""),
+            model=provider_config.get("google_model", "gemini-2.0-flash"),
+            timeout=timeout,
+        )
+
+    # Default: Ollama
+    model = provider_config.get("ollama_model", _OLLAMA_MODEL)
+    return _ollama_chat(messages, model=model, timeout=timeout)
+
+
+def _llm_json(prompt: str, provider_config: dict) -> dict | None:
+    """Send a prompt via the configured provider and parse the response as JSON."""
+    resp = _llm_chat([{"role": "user", "content": prompt}], provider_config)
+    if not resp:
+        return None
+    resp = resp.strip()
+    if resp.startswith("```"):
+        resp = resp.split("\n", 1)[-1]
+        resp = resp.rsplit("```", 1)[0]
+        resp = resp.strip()
+    try:
+        return json.loads(resp)
+    except json.JSONDecodeError:
+        return None
+
+
 def _ollama_json(prompt: str, model: str = _OLLAMA_MODEL) -> dict | None:
     """Send a prompt to Ollama and parse the response as JSON."""
     resp = _ollama_chat([{"role": "user", "content": prompt}], model=model)
@@ -137,6 +341,26 @@ def _ollama_embed(text: str) -> list[float] | None:
     except Exception:
         pass
     # Fallback to sentence-transformers if installed
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+        return model.encode(text[:2048]).tolist()
+    except ImportError:
+        pass
+    return None
+
+
+def _llm_embed(text: str, provider_config: dict) -> list[float] | None:
+    """Generate an embedding vector using the configured provider.
+
+    For Ollama, uses the nomic-embed-text endpoint.
+    For other providers, falls back directly to sentence-transformers.
+    """
+    provider = provider_config.get("provider", "ollama")
+    if provider == "ollama":
+        return _ollama_embed(text)
+    # Non-Ollama providers can't do embeddings — use sentence-transformers fallback
     try:
         from sentence_transformers import SentenceTransformer
 
@@ -259,7 +483,7 @@ def vector_search_node(state: QueryEngineState):
     if not db_path.exists():
         return {"retrieved_contexts": ["[Vector Search] DB not found"]}
 
-    embedding = _ollama_embed(query)
+    embedding = _llm_embed(query, state.get("provider_config", {}))
     if embedding is None:
         return {"retrieved_contexts": ["[Vector Search] No embedding model available"]}
 
@@ -325,9 +549,8 @@ def extract_text_node(state: QueryEngineState):
 # Code Generation Node — for calculations, data processing, file I/O, etc.
 def generate_py_script_node(state: QueryEngineState):
     """
-    Use Ollama to generate and run Python code for any task that
-    requires computation, data processing, file output, or other
-    operations not already built into the system.
+    Generate and run Python code for tasks requiring computation,
+    data processing, file I/O, etc.
     """
     query = state.get("query", "")
     contexts = state.get("retrieved_contexts", [])
@@ -358,7 +581,7 @@ Output ONLY the raw Python code, no explanations, no markdown fences."""
     # the broader conversation (e.g. follow-up refinements, corrections).
     messages = list(state.get("chat_history", []))
     messages.append({"role": "user", "content": prompt})
-    code = _ollama_chat(messages, timeout=120)
+    code = _llm_chat(messages, state.get("provider_config", {}), timeout=120)
     if not code:
         return {"generated_script_output": "Failed to generate calculation script."}
 
@@ -429,7 +652,7 @@ def parse_summarize_query_node(state: QueryEngineState):
 
 
 def check_if_relevant_node(state: QueryEngineState):
-    """Use Ollama to grade whether the retrieved context is relevant to the query."""
+    """Grade whether the retrieved context is relevant to the query."""
     query = state.get("query", "")
     contexts = state.get("retrieved_contexts", [])
     context_text = "\n".join(contexts) if contexts else "No context available."
@@ -446,7 +669,7 @@ Return a JSON object with:
 
 Respond with ONLY the JSON object."""
 
-    result = _ollama_json(prompt)
+    result = _llm_json(prompt, state.get("provider_config", {}))
     if result is None:
         return {"is_relevant": True}
     return {"is_relevant": result.get("is_relevant", True)}
@@ -495,7 +718,7 @@ def search_by_topic_node(state: QueryEngineState):
         contexts.append("[Tag Search] No documents found for this topic.")
 
     # 2. Vector search — semantic similarity on the keyword
-    embedding = _ollama_embed(topic)
+    embedding = _llm_embed(topic, state.get("provider_config", {}))
     if embedding is not None:
         try:
             conn = _open_rag_db(db_path)
@@ -525,10 +748,7 @@ def search_by_topic_node(state: QueryEngineState):
 
 # --- Final Target Node ---
 def generate_answer_node(state: QueryEngineState):
-    """
-    Use Ollama to produce the final answer by synthesising
-    all retrieved contexts (vector, BM25, web, tags) with the original query.
-    """
+    """Produce the final answer by synthesising contexts with the query."""
     query = state.get("query", "")
     contexts = state.get("retrieved_contexts", [])
     calc_output = state.get("generated_script_output", "")
@@ -563,11 +783,11 @@ INSTRUCTION: Answer using the context above. If it lacks the information, say so
     # Build full message list with conversational history
     messages = list(state.get("chat_history", []))
     messages.append({"role": "user", "content": prompt})
-    answer = _ollama_chat(messages, timeout=120)
+    answer = _llm_chat(messages, state.get("provider_config", {}), timeout=120)
     if not answer:
         answer = (
-            "I couldn't generate a response. The Ollama service may not be running.\n"
-            "Start it with `ollama serve` in your terminal."
+            "I couldn't generate a response. The AI provider may not be configured.\n"
+            "Go to Settings to select a provider and enter API keys."
         )
 
     return {"final_answer": answer.strip()}
@@ -584,22 +804,17 @@ def quality_check_node(state: QueryEngineState):
     answer = state.get("final_answer", "")
     attempts = state.get("refinement_attempts", 0)
     max_attempts = state.get("max_refinements", 3)
-
-    # If already at max attempts, skip evaluation — just pass through
     if attempts >= max_attempts:
         return {
             "answer_quality_score": 10,
             "refinement_feedback": "",
         }
-
     if not answer:
         return {
             "answer_quality_score": 0,
             "refinement_feedback": "No answer was generated.",
         }
-
     prompt = f"""You are an answer quality grader. Evaluate this answer on three criteria, each 0-10:
-
 Query: {query}
 
 Answer: {answer}
@@ -612,7 +827,7 @@ Return ONLY a JSON object:
   "feedback": "<one specific thing to improve>"
 }}"""
 
-    result = _ollama_json(prompt)
+    result = _llm_json(prompt, state.get("provider_config", {}))
     if result is None:
         # If grading fails, assume it's fine to avoid infinite loops
         return {"answer_quality_score": 10, "refinement_feedback": ""}
@@ -640,9 +855,7 @@ def refine_answer_node(state: QueryEngineState):
     contexts = state.get("retrieved_contexts", [])
     attempts = state.get("refinement_attempts", 0) + 1
     context_text = "\n\n".join(contexts) if contexts else "No context available."
-
     prompt = f"""You are improving a previous answer based on feedback.
-
 User Query: {query}
 
 Context:
@@ -659,7 +872,7 @@ Provide an improved, thorough answer that addresses the feedback above."""
     # Preserve conversational context during refinement
     messages = list(state.get("chat_history", []))
     messages.append({"role": "user", "content": prompt})
-    improved = _ollama_chat(messages, timeout=120)
+    improved = _llm_chat(messages, state.get("provider_config", {}), timeout=120)
     if not improved:
         improved = prev_answer  # keep previous if refinement fails
 
@@ -755,8 +968,8 @@ workflow.add_node("check_if_relevant_node", check_if_relevant_node)
 workflow.add_node("generate_answer_node", generate_answer_node)
 
 # Answer refinement loop
-workflow.add_node("quality_check_node", quality_check_node)
-workflow.add_node("refine_answer_node", refine_answer_node)
+workflow.add_node("quality_check_node", quality_check_node)  # Add node for quality_check_node
+workflow.add_node("refine_answer_node", refine_answer_node)  # Add node for refine_answer_node
 
 # 1. START → classify
 workflow.add_edge(START, "classify_node")

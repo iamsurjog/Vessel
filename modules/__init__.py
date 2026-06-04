@@ -197,6 +197,7 @@ def answerTo(
     query: str,
     web_search_enabled: bool = False,
     chat_history: list[dict] | None = None,
+    provider_config: dict | None = None,
 ) -> str:
     """
     Answer a user query by running the full LangGraph query pipeline:
@@ -213,6 +214,11 @@ def answerTo(
     chat_history : list[dict] | None
         Previous messages in the conversation, each with
         ``{"sender": "user"|"model", "text": "..."}`` for conversational context.
+    provider_config : dict | None
+        Provider configuration dict with keys:
+        provider (str), ollama_model (str),
+        openai_api_key (str), anthropic_api_key (str), google_api_key (str),
+        openai_model (str), anthropic_model (str), google_model (str).
 
     Returns
     -------
@@ -231,6 +237,9 @@ def answerTo(
             if text.strip():
                 history.append({"role": role, "content": text.strip()})
 
+    if provider_config is None:
+        provider_config = {}
+
     try:
         result = query_app.invoke({
             "query": query,
@@ -248,6 +257,7 @@ def answerTo(
             "refinement_feedback": "",
             "max_refinements": 3,
             "chat_history": history,
+            "provider_config": provider_config,
         })
 
         answer = result.get("final_answer", "")

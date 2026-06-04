@@ -66,11 +66,11 @@ ApplicationWindow {
                 anchors.centerIn: parent
                 modal: true
                 standardButtons: Dialog.Yes | Dialog.No
-                
+
                 property string vesselPathToDelete: ""
                 property string vesselNameToDelete: ""
 
-                background: Rectangle { color: bgCard; border.color: borderDark; radius: 6 }
+                background: Rectangle { color: bgCard; border.color: borderDark; radius: 8 }
                 
                 Column {
                     spacing: 12; width: 300
@@ -97,7 +97,12 @@ ApplicationWindow {
                         Text { text: "Vessels Engine Launcher"; color: textMain; font.pixelSize: 24; font.bold: true }
                         Text { text: "Open workspace notes environment containers or spawn localized text vaults."; color: textMuted; font.pixelSize: 12 }
                     }
-                    Button { id: createBtn; text: "+ New Vessel"; onClicked: newVesselPopup.open() }
+                    Button {
+                        id: createBtn; text: "+ New Vessel"
+                        onClicked: newVesselPopup.open()
+                        background: Rectangle { color: accentColor; radius: 6; implicitWidth: 110; implicitHeight: 34 }
+                        contentItem: Text { text: "+ New Vessel"; color: "#000000"; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    }
                 }
 
                 ScrollView {
@@ -114,8 +119,17 @@ ApplicationWindow {
                                     Text { text: modelData.name; color: textMain; font.bold: true; font.pixelSize: 14 }
                                     Text { text: modelData.path; color: textMuted; font.pixelSize: 11; elide: Text.ElideMiddle; width: parent.width }
                                 }
-                                Button { id: openVesselBtn; text: "Open Vessel"; onClicked: vesselManager.openVessel(modelData.path) }
-                                Button { id: deleteVesselBtn; text: "❌"; width: 35; onClicked: { deleteConfirmationDialog.vesselPathToDelete = modelData.path; deleteConfirmationDialog.vesselNameToDelete = modelData.name; deleteConfirmationDialog.open() } }
+                                Button {
+                                    id: openVesselBtn; text: "Open Vessel"
+                                    onClicked: vesselManager.openVessel(modelData.path)
+                                    background: Rectangle { color: openVesselBtn.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 90; implicitHeight: 30 }
+                                    contentItem: Text { text: "Open Vessel"; color: textMain; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                }
+                                Button {
+                                    id: deleteVesselBtn; text: "❌"; width: 35
+                                    onClicked: { deleteConfirmationDialog.vesselPathToDelete = modelData.path; deleteConfirmationDialog.vesselNameToDelete = modelData.name; deleteConfirmationDialog.open() }
+                                    background: Rectangle { color: deleteVesselBtn.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                                }
                             }
                         }
                     }
@@ -142,7 +156,7 @@ ApplicationWindow {
 
                 property string targetAbsPath: ""
 
-                background: Rectangle { color: bgCard; border.color: borderDark; radius: 6 }
+                background: Rectangle { color: bgCard; border.color: borderDark; radius: 8 }
 
                 Column {
                     spacing: 12
@@ -231,8 +245,13 @@ ApplicationWindow {
 
                         Row {
                             Layout.fillWidth: true; Layout.preferredHeight: 30
-                            Text { text: "🛸 " + vesselManager.currentVesselName; color: textMain; font.pixelSize: 15; font.bold: true; elide: Text.ElideRight; width: 180; anchors.verticalCenter: parent.verticalCenter }
-                            Button { id: closeWorkspaceBtn; text: "Exit"; onClicked: vesselManager.closeWorkspace() }
+                            Text { text: "🛸 " + vesselManager.currentVesselName; color: textMain; font.pixelSize: 15; font.bold: true; elide: Text.ElideRight; width: 170; anchors.verticalCenter: parent.verticalCenter }
+                            Button {
+                                id: closeWorkspaceBtn; text: "Exit"
+                                onClicked: vesselManager.closeWorkspace()
+                                background: Rectangle { color: closeWorkspaceBtn.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 50; implicitHeight: 28 }
+                                contentItem: Text { text: "Exit"; color: textMain; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            }
                         }
 
                         TabBar {
@@ -249,7 +268,7 @@ ApplicationWindow {
                             id: sidebarStackLayout
                             Layout.fillWidth: true; Layout.fillHeight: true; currentIndex: sidebarTabBar.currentIndex
 
-                            // [Index 0]: AI Subsystem Gemini-Style Sidebar Menu
+                            // [Index 0]: AI Chat Sidebar
                             Item {
                                 ColumnLayout {
                                     anchors.fill: parent
@@ -257,9 +276,14 @@ ApplicationWindow {
 
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        Text { text: "✦ Gemini Workspace Core"; color: textMain; font.bold: true; font.pixelSize: 13 }
+                                        Text { text: "✦ AI Chat"; color: textMain; font.bold: true; font.pixelSize: 13 }
                                         Item { Layout.fillWidth: true }
-                                        Button { text: "New 💬"; onClicked: vesselManager.newConversation() }
+                                        Button {
+                                            text: "New 💬"
+                                            onClicked: vesselManager.newConversation()
+                                            background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 60; implicitHeight: 26 }
+                                            contentItem: Text { text: "New 💬"; color: textMain; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        }
                                     }
 
                                     Text { text: "Recent Chats"; color: textMuted; font.pixelSize: 11; font.bold: true; Layout.topMargin: 5 }
@@ -309,7 +333,12 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         Text { text: "Materials Vault"; color: textMain; font.bold: true; font.pixelSize: 13 }
                                         Item { Layout.fillWidth: true }
-                                        Button { text: "+ Upload"; onClicked: fileUploadDialog.open() }
+                                        Button {
+                                            text: "+ Upload"
+                                            onClicked: fileUploadDialog.open()
+                                            background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 70; implicitHeight: 26 }
+                                            contentItem: Text { text: "+ Upload"; color: textMain; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        }
                                     }
 
                                     ScrollView { 
@@ -344,8 +373,16 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         Text { text: "Droplets (Notes)"; color: textMain; font.bold: true; font.pixelSize: 13 }
                                         Item { Layout.fillWidth: true }
-                                        Button { text: "+ 📄"; onClicked: vesselManager.createNewAsset("", false) }
-                                        Button { text: "+ 📁"; onClicked: vesselManager.createNewAsset("", true) }
+                                        Button {
+                                            text: "+ 📄"
+                                            onClicked: vesselManager.createNewAsset("", false)
+                                            background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 44; implicitHeight: 26 }
+                                        }
+                                        Button {
+                                            text: "+ 📁"
+                                            onClicked: vesselManager.createNewAsset("", true)
+                                            background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 44; implicitHeight: 26 }
+                                        }
                                     }
 
                                     ScrollView {
@@ -406,13 +443,26 @@ ApplicationWindow {
                             Layout.fillWidth: true; Layout.preferredHeight: 35
                             
                             Rectangle {
-                                width: 220; height: 32; color: bgPanel; radius: 4; border.color: borderDark
+                                width: 220; height: 32; color: bgPanel; radius: 6; border.color: borderDark
                                 Text { 
-                                    text: sidebarTabBar.currentIndex === 0 ? "🤖 Gemini Agent Shell Console" : (vesselManager.activeFileName ? vesselManager.activeFileName : "No File Open")
+                                    text: sidebarTabBar.currentIndex === 0 ? "🤖 AI Assistant" : (vesselManager.activeFileName ? vesselManager.activeFileName : "No File Open")
                                     color: textMain; anchors.centerIn: parent; font.pixelSize: 12; font.bold: true; elide: Text.ElideMiddle; width: parent.width - 20 
                                 }
                             }
                             Item { Layout.fillWidth: true }
+
+                            Button {
+                                id: settingsButton
+                                text: "⚙️"; width: 34; height: 32
+                                onClicked: settingsPopup.open()
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Settings"
+                                ToolTip.delay: 400
+                                background: Rectangle {
+                                    color: settingsButton.hovered ? "#2a2a2a" : "transparent"
+                                    radius: 6; border.color: borderDark; border.width: 1
+                                }
+                            }
 
                             Button {
                                 action: toggleRenderAction
@@ -422,6 +472,10 @@ ApplicationWindow {
                                 ToolTip.visible: hovered
                                 ToolTip.text: "Toggle Render Mode (Ctrl + M)"
                                 ToolTip.delay: 400
+                                background: Rectangle {
+                                    color: parent.hovered ? "#2a2a2a" : "transparent"
+                                    radius: 6; border.color: borderDark; border.width: 1
+                                }
                             }
                         }
 
@@ -503,12 +557,14 @@ ApplicationWindow {
                                             color: textMuted; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
                                             visible: pdfEngineDoc.status !== PdfDocument.Loading
                                         }
-                                        Button {
-                                            text: "↗️ Open in System PDF Viewer"
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                            visible: pdfEngineDoc.status !== PdfDocument.Loading
-                                            onClicked: Qt.openUrlExternally(vesselManager.activeFileUrl)
-                                        }
+                                            Button {
+                                                text: "↗️ Open in System PDF Viewer"
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                visible: pdfEngineDoc.status !== PdfDocument.Loading
+                                                onClicked: Qt.openUrlExternally(vesselManager.activeFileUrl)
+                                                background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 32 }
+                                                contentItem: Text { text: "↗️ Open in System PDF Viewer"; color: textMain; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            }
                                     }
                                 }
                             }
@@ -541,7 +597,7 @@ ApplicationWindow {
 
                                                 ColumnLayout {
                                                     Layout.fillWidth: true
-                                                    Text { text: modelData.sender === "user" ? "You" : "Gemini Core"; color: textMuted; font.bold: true; font.pixelSize: 11 }
+                                                    Text { text: modelData.sender === "user" ? "You" : "AI"; color: textMuted; font.bold: true; font.pixelSize: 11 }
                                                     Text { text: modelData.text; color: textMain; font.pixelSize: 13; wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.MarkdownText }
                                                 }
                                             }
@@ -600,7 +656,7 @@ ApplicationWindow {
                                             
                                             TextField {
                                                 id: aiConsoleInputBox; Layout.fillWidth: true; color: textMain; font.pixelSize: 13
-                                                placeholderText: "Ask Gemini anything about your notes, write scripts, or inspect assets..."
+                                                placeholderText: "Ask AI about your notes, write scripts, or inspect assets..."
                                                 placeholderTextColor: textMuted; background: Rectangle { color: "transparent" }
                                                 
                                                 onAccepted: {
@@ -622,7 +678,13 @@ ApplicationWindow {
                                             Button {
                                                 text: "➔"; Layout.preferredWidth: 36; Layout.preferredHeight: 36
                                                 enabled: aiConsoleInputBox.text.trim() !== ""
-                                                background: Rectangle { color: parent.enabled ? accentColor : "#252525"; radius: 18 }
+                                                background: Rectangle {
+                                                    color: parent.enabled ? accentColor : "#252525"
+                                                    radius: 18
+                                                    border.color: parent.enabled ? accentColor : "transparent"
+                                                    border.width: 1
+                                                }
+                                                contentItem: Text { text: "➔"; color: parent.enabled ? "#000000" : textMuted; font.bold: true; font.pixelSize: 16; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                                 onClicked: {
                                                     vesselManager.submitUserMessage(aiConsoleInputBox.text, vesselManager.webSearchEnabled)
                                                     aiConsoleInputBox.text = ""
@@ -695,13 +757,23 @@ ApplicationWindow {
                 Row {
                     width: parent.width; spacing: 10
                     TextField { id: locationTextField; width: parent.width - browseBtn.width - 10; placeholderText: "Type path or browse..."; color: textMain; selectByMouse: true; background: Rectangle { color: bgDark; border.color: borderDark; radius: 4 } }
-                    Button { id: browseBtn; text: "Browse"; onClicked: folderPickerDialog.open() }
+                    Button {
+                        id: browseBtn; text: "Browse"
+                        onClicked: folderPickerDialog.open()
+                        background: Rectangle { color: browseBtn.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 30 }
+                        contentItem: Text { text: "Browse"; color: textMain; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    }
                 }
             }
 
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter; spacing: 15
-                Button { text: "Cancel"; onClicked: newVesselPopup.close() }
+                Button {
+                    text: "Cancel"
+                    onClicked: newVesselPopup.close()
+                    background: Rectangle { color: parent.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 80; implicitHeight: 34 }
+                    contentItem: Text { text: "Cancel"; color: textMain; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
                 Button {
                     text: "Create"
                     enabled: nameTextField.text.trim().length > 0 && locationTextField.text.trim().length > 0
@@ -713,6 +785,179 @@ ApplicationWindow {
                             newVesselPopup.close()
                         }
                     }
+                    background: Rectangle {
+                        color: parent.enabled ? accentColor : "#252525"
+                        radius: 6; implicitWidth: 80; implicitHeight: 34
+                    }
+                    contentItem: Text { text: "Create"; color: parent.enabled ? "#000000" : textMuted; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // SETTINGS MODAL — provider selection & API key management
+    // =========================================================================
+    Popup {
+        id: settingsPopup
+        anchors.centerIn: parent
+        width: 480; height: 480; modal: true; focus: true
+        closePolicy: Popup.CloseOnEscape
+
+        background: Rectangle { color: bgCard; border.color: borderDark; radius: 8 }
+
+        property var providerKeys: ["ollama", "google", "openai", "anthropic"]
+
+        function syncFromManager() {
+            var p = vesselManager.providerName
+            for (var i = 0; i < settingsPopup.providerKeys.length; i++) {
+                if (settingsPopup.providerKeys[i] === p) {
+                    providerCombo.currentIndex = i
+                    break
+                }
+            }
+            ollamaModelField.text = vesselManager.ollamaModel
+            geminiKeyField.text = vesselManager.googleApiKey
+            chatgptKeyField.text = vesselManager.openaiApiKey
+            claudeKeyField.text = vesselManager.anthropicApiKey
+        }
+
+        function saveSettings() {
+            var idx = providerCombo.currentIndex
+            var provider = settingsPopup.providerKeys[idx]
+            vesselManager.setProviderName(provider)
+            vesselManager.setOllamaModel(ollamaModelField.text.trim() || "tinyllama:1.1b")
+            vesselManager.setGoogleApiKey(geminiKeyField.text)
+            vesselManager.setOpenaiApiKey(chatgptKeyField.text)
+            vesselManager.setAnthropicApiKey(claudeKeyField.text)
+            settingsPopup.close()
+        }
+
+        onOpened: syncFromManager()
+
+        Column {
+            anchors.fill: parent; anchors.margins: 25; spacing: 18
+
+            Text { text: "Settings"; color: textMain; font.pixelSize: 20; font.bold: true }
+            Text { text: "Configure AI provider and API credentials."; color: textMuted; font.pixelSize: 12 }
+
+            Rectangle { width: parent.width; height: 1; color: borderDark }
+
+            // Provider selector
+            Column { width: parent.width; spacing: 6
+                Text { text: "AI Provider"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                ComboBox {
+                    id: providerCombo
+                    width: parent.width; height: 36
+                    model: ["Local Ollama", "Gemini (Google)", "ChatGPT (OpenAI)", "Claude (Anthropic)"]
+                    currentIndex: 0
+
+                    background: Rectangle { color: bgDark; border.color: borderDark; radius: 6; implicitHeight: 36 }
+                    contentItem: Text { text: providerCombo.displayText; color: textMain; font.pixelSize: 13; verticalAlignment: Text.AlignVCenter; leftPadding: 10 }
+                    indicator: Text { text: "▼"; color: textMuted; font.pixelSize: 10; anchors.right: parent.right; anchors.rightMargin: 10; anchors.verticalCenter: parent.verticalCenter }
+                }
+            }
+
+            // ── Ollama: model name ──
+            Column { width: parent.width; spacing: 6
+                visible: providerCombo.currentIndex === 0
+                Text { text: "Model Name"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                TextField {
+                    id: ollamaModelField
+                    width: parent.width; height: 36
+                    placeholderText: "tinyllama:1.1b"
+                    color: textMain; font.pixelSize: 13
+                    leftPadding: 10
+                    background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                }
+                Text { text: "Requires Ollama installed and 'ollama serve' running."; color: textMuted; font.pixelSize: 10; wrapMode: Text.WordWrap }
+            }
+
+            // ── Gemini: API key ──
+            Column { width: parent.width; spacing: 6
+                visible: providerCombo.currentIndex === 1
+                Text { text: "Gemini API Key"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                Row { width: parent.width; spacing: 8
+                    TextField {
+                        id: geminiKeyField
+                        width: parent.width - toggleGeminiBtn.width - 8; height: 36
+                        placeholderText: "Enter your Google AI API key"
+                        color: textMain; font.pixelSize: 13; leftPadding: 10
+                        echoMode: TextInput.Password
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                    }
+                    Button {
+                        id: toggleGeminiBtn
+                        text: geminiKeyField.echoMode === TextInput.Password ? "👁️" : "🙈"
+                        width: 36; height: 36
+                        onClicked: geminiKeyField.echoMode = geminiKeyField.echoMode === TextInput.Password ? TextInput.Normal : TextInput.Password
+                        background: Rectangle { color: toggleGeminiBtn.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                    }
+                }
+            }
+
+            // ── ChatGPT: API key ──
+            Column { width: parent.width; spacing: 6
+                visible: providerCombo.currentIndex === 2
+                Text { text: "OpenAI API Key"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                Row { width: parent.width; spacing: 8
+                    TextField {
+                        id: chatgptKeyField
+                        width: parent.width - toggleGptBtn.width - 8; height: 36
+                        placeholderText: "sk-..."
+                        color: textMain; font.pixelSize: 13; leftPadding: 10
+                        echoMode: TextInput.Password
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                    }
+                    Button {
+                        id: toggleGptBtn
+                        text: chatgptKeyField.echoMode === TextInput.Password ? "👁️" : "🙈"
+                        width: 36; height: 36
+                        onClicked: chatgptKeyField.echoMode = chatgptKeyField.echoMode === TextInput.Password ? TextInput.Normal : TextInput.Password
+                        background: Rectangle { color: toggleGptBtn.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                    }
+                }
+            }
+
+            // ── Claude: API key ──
+            Column { width: parent.width; spacing: 6
+                visible: providerCombo.currentIndex === 3
+                Text { text: "Anthropic API Key"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                Row { width: parent.width; spacing: 8
+                    TextField {
+                        id: claudeKeyField
+                        width: parent.width - toggleClaudeBtn.width - 8; height: 36
+                        placeholderText: "sk-ant-..."
+                        color: textMain; font.pixelSize: 13; leftPadding: 10
+                        echoMode: TextInput.Password
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                    }
+                    Button {
+                        id: toggleClaudeBtn
+                        text: claudeKeyField.echoMode === TextInput.Password ? "👁️" : "🙈"
+                        width: 36; height: 36
+                        onClicked: claudeKeyField.echoMode = claudeKeyField.echoMode === TextInput.Password ? TextInput.Normal : TextInput.Password
+                        background: Rectangle { color: toggleClaudeBtn.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                    }
+                }
+            }
+
+            Item { Layout.fillHeight: true }
+
+            // Action buttons
+            Row {
+                anchors.horizontalCenter: parent.horizontalCenter; spacing: 15
+                Button {
+                    text: "Cancel"
+                    onClicked: settingsPopup.close()
+                    background: Rectangle { color: parent.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 80; implicitHeight: 34 }
+                    contentItem: Text { text: "Cancel"; color: textMain; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+                Button {
+                    text: "Save"
+                    onClicked: settingsPopup.saveSettings()
+                    background: Rectangle { color: accentColor; radius: 6; implicitWidth: 80; implicitHeight: 34 }
+                    contentItem: Text { text: "Save"; color: "#000000"; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
         }

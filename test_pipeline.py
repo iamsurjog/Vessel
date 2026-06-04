@@ -17,7 +17,8 @@ from modules.query import (
     app,
     QueryEngineState,
     _ollama_chat,
-    _ollama_embed,
+    _llm_chat,
+    _llm_embed,
     _OLLAMA_MODEL,
     _OLLAMA_BASE,
 )
@@ -70,7 +71,8 @@ def main():
     step(f"All documents in DB ({len(docs)} total)", docs[:10] if docs else "EMPTY")
 
     # ── 2. Run the pipeline with a monkey-patched _ollama_chat ───────
-    # We'll capture the exact prompt sent
+    # We'll capture the exact prompt sent (the dispatch goes through
+    # _llm_chat → _ollama_chat for the default ollama provider)
     last_prompt = [""]
 
     original_chat = _ollama_chat
@@ -78,7 +80,7 @@ def main():
     def capturing_chat(messages, model=_OLLAMA_MODEL, timeout=120):
         last_prompt[0] = json.dumps(messages, indent=2)
         print(f"\n{'─'*70}")
-        print("  PROMPT SENT TO OLLAMA:")
+        print("  PROMPT SENT TO OLLAMA (via _llm_chat dispatch):")
         print(f"{'─'*70}")
         print(last_prompt[0])
         print(f"{'─'*70}")
@@ -94,6 +96,11 @@ def main():
     print(f"\n{'#'*70}")
     print(f"  RUNNING PIPELINE: {query}")
     print(f"{'#'*70}")
+
+    provider_config = {
+        "provider": "ollama",
+        "ollama_model": "tinyllama:1.1b",
+    }
 
     initial_state = {
         "query": query,
@@ -111,6 +118,7 @@ def main():
         "refinement_feedback": "",
         "max_refinements": 3,
         "chat_history": [],
+        "provider_config": provider_config,
     }
 
     try:
@@ -119,11 +127,13 @@ def main():
         action = result.get("action_type", "?")
         topic = result.get("topic_keyword", "?")
         contexts = result.get("retrieved_contexts", [])
+        pconf = result.get("provider_config", {})
 
         print(f"\n{'#'*70}")
         step("PIPELINE RESULT", {
             "action_type": action,
             "topic_keyword": topic,
+            "provider": pconf.get("provider", "?"),
             "contexts_count": len(contexts),
             "contexts_sample": contexts[:3] if contexts else "(empty)",
             "final_answer": answer,
