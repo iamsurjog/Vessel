@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, Slot, Signal, Property, QUrl
 from PySide6.QtGui import QGuiApplication, QDesktopServices
 from PySide6.QtQml import QQmlApplicationEngine
 
-from modules import updateEmbeds, answerTo, initVessel
+from modules import updateEmbeds, answerTo, initVessel, bm25_search, tag_search
 
 def get_storage_directory() -> Path:
     home = Path.home()
@@ -137,28 +137,26 @@ class VesselManager(QObject):
         self.activeChatChanged.emit()
 
     @Slot(str)
-    @Slot(str)
     def submitUserMessage(self, message):
-        """Appends user input and streams live backend calculations to the workspace timeline."""
+        """Appends user input and streams answers from the local RAG pipeline."""
         if not message.strip(): 
             return
             
-        # A. Append your message directly to the visual timeline grid array map
         self._active_chat_history.append({"sender": "user", "text": message.strip()})
         self.activeChatChanged.emit()
         
-        # B. Route directly to your LLM endpoint passing the active contextual channel identity key
         try:
-            # Passes current conversation identity string parameter (e.g., "c1")
-            ai_response = answerTo(self._active_chat_id, message.strip())
+            # Route through the local RAG pipeline using the active vessel path
+            if self._current_vessel_path:
+                ai_response = answerTo(self._current_vessel_path, message.strip())
+            else:
+                ai_response = "*No vessel is currently open. Please create or open a vessel first.*"
             
-            # Fallback error guard check if backend module outputs a null response block
             if not ai_response:
                 ai_response = "✦ *Gemini Core error: Empty inference buffer returned from background pipeline host.*"
         except Exception as e:
             ai_response = f"⚠️ *Failed to communicate with local RAG execution thread:* \n\n```\n{str(e)}\n ```"
 
-        # C. Stream the processing results straight back to your QML interface canvas frame
         self._active_chat_history.append({"sender": "model", "text": ai_response})
         self.activeChatChanged.emit()
 
@@ -354,10 +352,22 @@ class VesselManager(QObject):
         
         if success:
             try:
-                updateEmbeds()
-                print("Vector Index: Regenerated layout map hashes after asset renaming.")
+                from modules import bm25_search as _  # noqa — ensure modules loaded
+                from pathlib import Path as _P
+                import sqlite3
+                db_file = _P(self._current_vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+                if db_file.exists():
+                    conn = sqlite3.connect(str(db_file))
+                    conn.execute("PRAGMA foreign_keys = ON;")
+                    conn.execute(
+                        "UPDATE documents SET title = ? WHERE title = ?",
+                        (new_path.name, old_path.name),
+                    )
+                    conn.commit()
+                    conn.close()
+                    print(f"📝 Updated document title: {old_path.name} → {new_path.name}")
             except Exception as e:
-                print(f"Backend Error running updateEmbeds on rename: {e}")
+                print(f"Info: Could not update document title on rename ({e})")
         return success
 
     @Slot(str)
@@ -433,9 +443,10 @@ class VesselManager(QObject):
         source = Path(clean_path)
         if not source.exists(): return False
         try:
-            shutil.copy2(source, Path(self._current_vessel_path) / "Materials" / source.name)
+            dest = Path(self._current_vessel_path) / "Materials" / source.name
+            shutil.copy2(source, dest)
             try:
-                updateEmbeds()
+                updateEmbeds(str(dest.resolve()))
                 print("Vector Index: Successfully synchronized embeddings for new asset upload.")
             except Exception as e:
                 print(f"Backend Error running updateEmbeds on upload: {e}")
@@ -489,6 +500,4 @@ if __name__ == "__main__":
             with open(vessel_manager._active_file_path, "w", encoding="utf-8") as f:
                 f.write(vessel_manager._active_file_text)
             print(f"💾 Successfully saved uncommitted modifications to: {vessel_manager._active_file_name}")
-            updateEmbeds()
-            # Update embeddings exactly once before termination
                     

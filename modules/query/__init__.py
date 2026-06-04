@@ -1,6 +1,15 @@
+import json
 import operator
+from pathlib import Path
 from typing import Annotated, List, TypedDict
 from langgraph.graph import START, END, StateGraph
+import sqlite3
+import sqlite_vec
+
+# The bm25_search function lives in modules/__init__.py so it's importable
+# from anywhere, but the query graph also uses it directly.
+from modules import bm25_search
+
 
 # ==========================================
 # 1. THE QUERY ENGINE STATE
@@ -11,7 +20,8 @@ class QueryEngineState(TypedDict):
     web_search_enabled: bool
     require_calculation: bool
     is_relevant: bool
-    
+    vessel_path: str            # added — so BM25 / vector nodes know where the DB is
+
     # 'operator.add' aggregates multi-channel search results seamlessly
     retrieved_contexts: Annotated[List[str], operator.add]
     generated_script_output: str
@@ -19,7 +29,7 @@ class QueryEngineState(TypedDict):
 
 
 # ==========================================
-# 2. GRAPH NODE STUBS
+# 2. GRAPH NODES
 # ==========================================
 
 # --- Track 1: Answer Question Branch ---
@@ -27,23 +37,122 @@ async def answer_q_node(state: QueryEngineState):
     print("🤖 [Answer Q Node] Processing question intent...")
     return {}
 
+
 # The Parallel "Get Context" Box (Fires simultaneously)
 async def web_search_node(state: QueryEngineState):
     print("🔍 [Get Context] Running Web Search...")
+    # Web search is left as a stub — wire up your own search API here.
     return {"retrieved_contexts": ["Web Context Data"]}
 
+
 async def vector_search_node(state: QueryEngineState):
-    print("🧬 [Get Context] Running Vector Embed Search...")
-    return {"retrieved_contexts": ["Vector DB Context Data"]}
+    """
+    Semantic vector search using sqlite-vec cosine-similarity lookup.
+    """
+    query = state.get("query", "").strip()
+    vessel_path = state.get("vessel_path", "")
+    if not query or not vessel_path:
+        return {"retrieved_contexts": []}
+
+    db_path = Path(vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+    if not db_path.exists():
+        return {"retrieved_contexts": ["[Vector Search] DB not found"]}
+
+    # To run vector search we need an embedding model.
+    # Try the same two strategies as the upload pipeline.
+    embedding = None
+
+    try:
+        import httpx
+        resp = httpx.post(
+            "http://localhost:11434/api/embeddings",
+            json={"model": "nomic-embed-text", "prompt": query[:2048]},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            embedding = resp.json().get("embedding")
+    except Exception:
+        pass
+
+    if embedding is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            embedding = model.encode(query[:2048]).tolist()
+        except ImportError:
+            pass
+
+    if embedding is None:
+        return {"retrieved_contexts": ["[Vector Search] No embedding model available"]}
+
+    # Query sqlite-vec for top-5 similar documents
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        cursor = conn.cursor()
+
+        rows = cursor.execute(
+            """
+            SELECT d.title, d.text_chunk, distance
+            FROM v_document_embeddings
+            JOIN documents d ON d.id = v_document_embeddings.rowid
+            WHERE v_document_embeddings MATCH ?
+              AND k = 5
+            ORDER BY distance
+            """,
+            (json.dumps(embedding),),
+        ).fetchall()
+        conn.close()
+
+        contexts = [
+            f"[Vector] {r[0]}: {r[1][:300]} (dist={r[2]:.4f})"
+            for r in rows
+        ]
+        if not contexts:
+            contexts = ["[Vector Search] No similar documents found"]
+
+        return {"retrieved_contexts": contexts}
+
+    except Exception as e:
+        return {"retrieved_contexts": [f"[Vector Search] Error: {e}"]}
+
 
 async def keyword_search_node(state: QueryEngineState):
-    print("🔑 [Get Context] Running Keyword Search...")
-    return {"retrieved_contexts": ["Keyword/Tag Match Data"]}
+    """
+    BM25 keyword search via SQLite FTS5.
+
+    Actually runs the search — not a stub.
+    Uses the bm25_search() helper from modules/__init__.py
+    """
+    query = state.get("query", "").strip()
+    vessel_path = state.get("vessel_path", "")
+    if not query or not vessel_path:
+        return {"retrieved_contexts": []}
+
+    db_path = Path(vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+    if not db_path.exists():
+        return {"retrieved_contexts": ["[BM25] No RAG database found for this vessel."]}
+
+    results = bm25_search(db_path, query, top_k=10)
+
+    if not results:
+        return {"retrieved_contexts": ["[BM25] No keyword matches found."]}
+
+    contexts = [
+        f"[BM25] {r['title']}: {r['text_chunk'][:300]} (rank={r['rank']:.4f})"
+        for r in results
+    ]
+
+    return {"retrieved_contexts": contexts}
+
 
 # Extract Text Node aggregates the parallel streams
 async def extract_text_node(state: QueryEngineState):
     print("📄 [Extract Text] Compiling and cleaning retrieved contexts...")
     return {}
+
 
 # Calculation Sub-Branch Nodes
 async def generate_py_script_node(state: QueryEngineState):
@@ -56,9 +165,11 @@ async def summarize_generate_node(state: QueryEngineState):
     print("📝 [Summarize/Generate Node] Processing document task...")
     return {}
 
+
 async def get_select_data_by_tag_or_folder(state: QueryEngineState):
     print("📂 [Data Loader] Pulling records matching Tag/Folder configuration...")
     return {"retrieved_contexts": ["Raw Tagged/Folder Data Context"]}
+
 
 async def check_if_relevant_node(state: QueryEngineState):
     print("⚖️  [Evaluator] Grading context relevance...")
@@ -80,17 +191,19 @@ def initial_action_router(state: QueryEngineState) -> str:
         return "route_to_summarizer"
     return "route_to_answer_q"
 
+
 def web_search_toggle_router(state: QueryEngineState) -> List[str]:
-    # Dynamic Fan-Out: Vector and Keyword search always run, Web Search is optional
     activated_nodes = ["vector_search_node", "keyword_search_node"]
     if state.get("web_search_enabled", False):
         activated_nodes.append("web_search_node")
     return activated_nodes
 
+
 def calculation_router(state: QueryEngineState) -> str:
     if state.get("require_calculation", False):
         return "route_to_calc_runner"
     return "skip_to_answer_generation"
+
 
 def relevance_router(state: QueryEngineState) -> str:
     if state.get("is_relevant", True):
@@ -103,7 +216,6 @@ def relevance_router(state: QueryEngineState) -> str:
 # ==========================================
 workflow = StateGraph(QueryEngineState)
 
-# Register all layout blocks
 workflow.add_node("answer_q_node", answer_q_node)
 workflow.add_node("web_search_node", web_search_node)
 workflow.add_node("vector_search_node", vector_search_node)
@@ -117,9 +229,7 @@ workflow.add_node("check_if_relevant_node", check_if_relevant_node)
 
 workflow.add_node("generate_answer_node", generate_answer_node)
 
-# --- WIRE THE SWITCHBOARDS ---
-
-# 1. Main entry fork (Action?)
+# 1. Main entry fork
 workflow.add_conditional_edges(
     START,
     initial_action_router,
@@ -133,16 +243,14 @@ workflow.add_conditional_edges(
 workflow.add_conditional_edges(
     "answer_q_node",
     web_search_toggle_router,
-    # Directly lists the potential parallel target nodes
     ["web_search_node", "vector_search_node", "keyword_search_node"]
 )
 
-# Map the parallel search tracks back into the text extractor sync point
 workflow.add_edge("web_search_node", "extract_text_node")
 workflow.add_edge("vector_search_node", "extract_text_node")
 workflow.add_edge("keyword_search_node", "extract_text_node")
 
-# 3. Track 1: Calculation Fork (Require Calc?)
+# 3. Track 1: Calculation Fork
 workflow.add_conditional_edges(
     "extract_text_node",
     calculation_router,
@@ -153,12 +261,10 @@ workflow.add_conditional_edges(
 )
 workflow.add_edge("generate_py_script_node", "generate_answer_node")
 
-
 # 4. Track 2: Summarize / Tag Retrieval Pipeline
 workflow.add_edge("summarize_generate_node", "get_select_data_by_tag_or_folder")
 workflow.add_edge("get_select_data_by_tag_or_folder", "check_if_relevant_node")
 
-# Check if relevant split
 workflow.add_conditional_edges(
     "check_if_relevant_node",
     relevance_router,
@@ -172,6 +278,3 @@ workflow.add_conditional_edges(
 workflow.add_edge("generate_answer_node", END)
 
 app = workflow.compile()
-workflow.add_edge("answer_q_node", "web_search_node")
-workflow.add_edge("answer_q_node", "vector_search_node")
-workflow.add_edge("answer_q_node", "keyword_search_node")
