@@ -284,7 +284,7 @@ def initVessel(path: Path) -> bool:
     Also enforces a UNIQUE constraint on documents.title so that the
     upload pipeline is safe against concurrent INSERT races.
     """
-    sys_dir = path / "AI" / ".sys"
+    sys_dir = path / ".vessel"
     content_dir = path / "AI" / "content"
     sys_dir.mkdir(parents=True, exist_ok=True)
     content_dir.mkdir(parents=True, exist_ok=True)

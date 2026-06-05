@@ -479,7 +479,7 @@ def vector_search_node(state: QueryEngineState):
     if not query or not vessel_path:
         return {"retrieved_contexts": []}
 
-    db_path = Path(vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+    db_path = Path(vessel_path) / ".vessel" / "vessel_rag.db"
     if not db_path.exists():
         return {"retrieved_contexts": ["[Vector Search] DB not found"]}
 
@@ -525,7 +525,7 @@ def keyword_search_node(state: QueryEngineState):
     if not query or not vessel_path:
         return {"retrieved_contexts": []}
 
-    db_path = Path(vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+    db_path = Path(vessel_path) / ".vessel" / "vessel_rag.db"
     if not db_path.exists():
         return {"retrieved_contexts": ["[BM25] No RAG database found for this vessel."]}
 
@@ -682,7 +682,7 @@ def get_all_documents_node(state: QueryEngineState):
     if not vessel_path:
         return {"retrieved_contexts": ["[All Docs] No vessel path."]}
 
-    db_path = Path(vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+    db_path = Path(vessel_path) / ".vessel" / "vessel_rag.db"
     if not db_path.exists():
         return {"retrieved_contexts": ["[All Docs] DB not found."]}
 
@@ -703,7 +703,7 @@ def search_by_topic_node(state: QueryEngineState):
     if not vessel_path or not topic:
         return {"retrieved_contexts": ["[Topic] No vessel path or keyword."]}
 
-    db_path = Path(vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+    db_path = Path(vessel_path) / ".vessel" / "vessel_rag.db"
     if not db_path.exists():
         return {"retrieved_contexts": ["[Topic] DB not found."]}
 

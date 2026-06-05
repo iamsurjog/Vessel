@@ -112,7 +112,7 @@ class VesselManager(QObject):
     def _chats_dir(self) -> Path | None:
         if not self._current_vessel_path:
             return None
-        d = Path(self._current_vessel_path) / "AI" / ".sys" / "chats"
+        d = Path(self._current_vessel_path) / ".vessel" / "chats"
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -635,7 +635,7 @@ class VesselManager(QObject):
                 import sqlite3
 
                 db_file = (
-                    _P(self._current_vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+                    _P(self._current_vessel_path) / ".vessel" / "vessel_rag.db"
                 )
                 if db_file.exists():
                     conn = sqlite3.connect(str(db_file))

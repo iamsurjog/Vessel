@@ -25,7 +25,7 @@ from modules.query import (
 
 
 def db_path_from_vessel(vessel_path: str) -> Path:
-    return Path(vessel_path) / "AI" / ".sys" / "vessel_rag.db"
+    return Path(vessel_path) / ".vessel" / "vessel_rag.db"
 
 
 def step(label: str, obj):

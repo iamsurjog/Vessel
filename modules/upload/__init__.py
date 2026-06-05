@@ -41,7 +41,7 @@ def _locate_vessel(file_path: str):
     for i, part in enumerate(parts):
         if part in ("Materials", "Droplets", "AI"):
             root = Path(*parts[:i])
-            db_path = root / "AI" / ".sys" / "vessel_rag.db"
+            db_path = root / ".vessel" / "vessel_rag.db"
             content_dir = root / "AI" / "content"
             content_dir.mkdir(parents=True, exist_ok=True)
             return root, db_path, content_dir
