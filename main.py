@@ -29,6 +29,37 @@ def get_storage_directory() -> Path:
 
 STORAGE_FILE = get_storage_directory() / "vessels_history.json"
 PROVIDER_CONFIG_FILE = get_storage_directory() / "provider_config.json"
+THEME_CONFIG_FILE = get_storage_directory() / "theme_config.json"
+
+
+def _default_theme() -> dict:
+    return {
+        "bgDark": "#141414",
+        "bgCard": "#1e1e1e",
+        "bgPanel": "#181818",
+        "borderColor": "#2a2a2a",
+        "textPrimary": "#ffffff",
+        "textSecondary": "#7a7a7a",
+        "accent": "#bb86fc",
+        "danger": "#ff5555",
+    }
+
+
+def _load_theme() -> dict:
+    cfg = _default_theme()
+    if THEME_CONFIG_FILE.exists():
+        try:
+            data = json.loads(THEME_CONFIG_FILE.read_text(encoding="utf-8"))
+            cfg.update(data)
+        except Exception:
+            pass
+    return cfg
+
+
+def _save_theme(cfg: dict):
+    THEME_CONFIG_FILE.write_text(
+        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def _default_provider_config() -> dict:
@@ -80,6 +111,7 @@ class VesselManager(QObject):
     notificationEmitted = Signal(str, str)  # message, color (#hex or "info"/"error"/"success")
     eventsChanged = Signal()
     providerConfigChanged = Signal()
+    themeConfigChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -100,6 +132,8 @@ class VesselManager(QObject):
 
         # Provider configuration (persisted)
         self._provider_config = _load_provider_config()
+
+        self._theme_config = _load_theme()
 
         # Processing state for loading indicator
         self._ai_processing = False
@@ -324,6 +358,52 @@ class VesselManager(QObject):
         self._provider_config["google_api_key"] = key
         _save_provider_config(self._provider_config)
         self.providerConfigChanged.emit()
+
+    # ------------------------------------------------------------------
+    # Theme configuration properties
+    # ------------------------------------------------------------------
+    @Property(str, notify=themeConfigChanged)
+    def themeBgDark(self):
+        return self._theme_config.get("bgDark", "#141414")
+
+    @Property(str, notify=themeConfigChanged)
+    def themeBgCard(self):
+        return self._theme_config.get("bgCard", "#1e1e1e")
+
+    @Property(str, notify=themeConfigChanged)
+    def themeBgPanel(self):
+        return self._theme_config.get("bgPanel", "#181818")
+
+    @Property(str, notify=themeConfigChanged)
+    def themeBorderColor(self):
+        return self._theme_config.get("borderColor", "#2a2a2a")
+
+    @Property(str, notify=themeConfigChanged)
+    def themeTextPrimary(self):
+        return self._theme_config.get("textPrimary", "#ffffff")
+
+    @Property(str, notify=themeConfigChanged)
+    def themeTextSecondary(self):
+        return self._theme_config.get("textSecondary", "#7a7a7a")
+
+    @Property(str, notify=themeConfigChanged)
+    def themeAccent(self):
+        return self._theme_config.get("accent", "#bb86fc")
+
+    @Property(str, notify=themeConfigChanged)
+    def themeDanger(self):
+        return self._theme_config.get("danger", "#ff5555")
+
+    @Slot(str, str)
+    def setThemeColor(self, key, value):
+        if key in self._theme_config and self._theme_config[key] != value:
+            self._theme_config[key] = value
+            _save_theme(self._theme_config)
+            self.themeConfigChanged.emit()
+
+    @Slot(result=str)
+    def getThemeJson(self):
+        return json.dumps(self._theme_config)
 
     @Property(bool, notify=aiProcessingChanged)
     def aiProcessing(self):

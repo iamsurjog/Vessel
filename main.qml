@@ -12,13 +12,22 @@ ApplicationWindow {
     visibility: Window.FullScreen
     title: vesselManager.currentVesselName ? vesselManager.currentVesselName + " - Vessel Workspace" : "Vessel Launcher"
 
-    readonly property color bgDark: "#141414"
-    readonly property color bgCard: "#1e1e1e"
-    readonly property color bgPanel: "#181818"
-    readonly property color borderDark: "#2a2a2a"
-    readonly property color textMain: "#ffffff"
-    readonly property color textMuted: "#7a7a7a"
-    readonly property color accentColor: "#bb86fc"
+    readonly property color bgDark: vesselManager.themeBgDark
+    readonly property color bgCard: vesselManager.themeBgCard
+    readonly property color bgPanel: vesselManager.themeBgPanel
+    readonly property color borderDark: vesselManager.themeBorderColor
+    readonly property color textMain: vesselManager.themeTextPrimary
+    readonly property color textMuted: vesselManager.themeTextSecondary
+    readonly property color accentColor: vesselManager.themeAccent
+    readonly property color dangerColor: vesselManager.themeDanger
+
+    // Derived theme colors (auto-computed)
+    readonly property color hoverBg: Qt.lighter(bgCard, 1.08)
+    readonly property color buttonHoverBg: Qt.lighter(bgCard, 1.25)
+    readonly property color activeBg: Qt.lighter(bgPanel, 1.2)
+    readonly property color textOnAccent: "#000000"
+    readonly property color successColor: "#50fa7b"
+    readonly property color disabledBg: Qt.darker(bgDark, 1.15)
 
     // App state tracking parameter
     property bool renderModeActive: false
@@ -55,7 +64,7 @@ ApplicationWindow {
     property var _toastQueue: []
 
     function showToast(msg, color) {
-        _toastQueue.push({ text: msg, color: color || "#bb86fc" })
+        _toastQueue.push({ text: msg, color: color || accentColor })
         if (!toastShowTimer.running && !toastHideAnim.running) {
             _dequeueToast()
         }
@@ -64,11 +73,10 @@ ApplicationWindow {
     function _dequeueToast() {
         if (_toastQueue.length === 0) return
         var item = _toastQueue[0]
-        toastInner.color = item.color === "error" ? "#ff5555"
-                          : item.color === "success" ? "#50fa7b"
+        toastInner.color = item.color === "error" ? dangerColor
+                          : item.color === "success" ? successColor
                           : item.color
-        toastText.text = item.text
-        toastText.color = (item.color === "error" || item.color === "success" || item.color === "#50fa7b" || item.color === "#ff5555") ? "#000000" : "#ffffff"
+        toastText.color = (item.color === "error" || item.color === "success" || item.color === "#50fa7b" || item.color === "#ff5555") ? textOnAccent : textMain
         toastRect.visible = true
         toastShowAnim.start()
         toastShowTimer.start()
@@ -86,7 +94,7 @@ ApplicationWindow {
 
         Rectangle {
             id: toastInner
-            anchors.fill: parent; radius: 8; color: "#bb86fc"
+            anchors.fill: parent; radius: 8; color: accentColor
             opacity: 0
             Behavior on opacity { NumberAnimation { duration: 250 } }
         }
@@ -94,7 +102,7 @@ ApplicationWindow {
         Text {
             id: toastText
             anchors.centerIn: parent
-            color: "#ffffff"; font.pixelSize: 12; font.bold: true
+            color: textMain; font.pixelSize: 12; font.bold: true
         }
 
         NumberAnimation {
@@ -146,7 +154,7 @@ ApplicationWindow {
                 
                 Column {
                     spacing: 12; width: 300
-                    Text { text: "⚠️ PERMANENT DISK WIPE?"; color: "#ff5555"; font.bold: true; font.pixelSize: 15 }
+                    Text { text: "PERMANENT DISK WIPE?"; color: dangerColor; font.bold: true; font.pixelSize: 15 }
                     Text { 
                         text: "Confirm deletion of '" + deleteConfirmationDialog.vesselNameToDelete + "'?\n\nThis completely erases all notes and assets from your computer disk storage framework permanently."
                         color: textMain; font.pixelSize: 12; width: parent.width; wrapMode: Text.WordWrap 
@@ -173,7 +181,7 @@ ApplicationWindow {
                         id: createBtn; text: "+ New Vessel"
                         onClicked: newVesselPopup.open()
                         background: Rectangle { color: accentColor; radius: 6; implicitWidth: 110; implicitHeight: 34 }
-                        contentItem: Text { text: "+ New Vessel"; color: "#000000"; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        contentItem: Text { text: "+ New Vessel"; color: textOnAccent; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                 }
 
@@ -194,13 +202,14 @@ ApplicationWindow {
                                 Button {
                                     id: openVesselBtn; text: "Open Vessel"
                                     onClicked: vesselManager.openVessel(modelData.path)
-                                    background: Rectangle { color: openVesselBtn.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 90; implicitHeight: 30 }
+                                    background: Rectangle { color: openVesselBtn.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 90; implicitHeight: 30 }
                                     contentItem: Text { text: "Open Vessel"; color: textMain; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 }
                                 Button {
-                                    id: deleteVesselBtn; text: "❌"; width: 35
+                                    id: deleteVesselBtn; text: "✕"; font.pixelSize: 14; width: 35
                                     onClicked: { deleteConfirmationDialog.vesselPathToDelete = modelData.path; deleteConfirmationDialog.vesselNameToDelete = modelData.name; deleteConfirmationDialog.open() }
-                                    background: Rectangle { color: deleteVesselBtn.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                                    contentItem: Text { text: parent.text; color: textMuted; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                    background: Rectangle { color: deleteVesselBtn.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
                                 }
                             }
                         }
@@ -263,8 +272,8 @@ ApplicationWindow {
 
             Menu {
                 id: globalSidebarContextMenu
-                MenuItem { text: "📁 New Folder"; onClicked: vesselManager.createNewAsset("", true) }
-                MenuItem { text: "📝 New Droplet"; onClicked: vesselManager.createNewAsset("", false) }
+                MenuItem { text: "New Folder"; onClicked: vesselManager.createNewAsset("", true) }
+                MenuItem { text: "New Droplet"; onClicked: vesselManager.createNewAsset("", false) }
             }
 
             Menu {
@@ -274,11 +283,11 @@ ApplicationWindow {
                 property string targetedName: ""
                 property bool targetIsDir: false
 
-                MenuItem { text: "📝 New Droplet Here"; visible: itemContextMenu.targetIsDir; onClicked: vesselManager.createNewAsset(itemContextMenu.targetedRelPath, false) }
-                MenuItem { text: "📁 New Folder Here"; visible: itemContextMenu.targetIsDir; onClicked: vesselManager.createNewAsset(itemContextMenu.targetedRelPath, true) }
+                MenuItem { text: "New Droplet Here"; visible: itemContextMenu.targetIsDir; onClicked: vesselManager.createNewAsset(itemContextMenu.targetedRelPath, false) }
+                MenuItem { text: "New Folder Here"; visible: itemContextMenu.targetIsDir; onClicked: vesselManager.createNewAsset(itemContextMenu.targetedRelPath, true) }
                 
                 MenuItem { 
-                    text: "✏️ Rename Asset"
+                    text: "Rename Asset"
                     onClicked: {
                         renameModalDialog.targetAbsPath = itemContextMenu.targetedPath
                         renameInputBox.text = itemContextMenu.targetedName
@@ -286,7 +295,7 @@ ApplicationWindow {
                     }
                 }
 
-                MenuItem { text: "🗑️ Delete Asset"; onClicked: vesselManager.removeAsset(itemContextMenu.targetedPath) }
+                MenuItem { text: "Delete Asset"; onClicked: vesselManager.removeAsset(itemContextMenu.targetedPath) }
             }
 
             // Keyboard shortcut binding mechanism for content scaling conversions
@@ -317,11 +326,11 @@ ApplicationWindow {
 
                         Row {
                             Layout.fillWidth: true; Layout.preferredHeight: 30
-                            Text { text: "🛸 " + vesselManager.currentVesselName; color: textMain; font.pixelSize: 15; font.bold: true; elide: Text.ElideRight; width: 170; anchors.verticalCenter: parent.verticalCenter }
+                            Text { text: vesselManager.currentVesselName; color: textMain; font.pixelSize: 15; font.bold: true; elide: Text.ElideRight; width: 170; anchors.verticalCenter: parent.verticalCenter }
                             Button {
                                 id: closeWorkspaceBtn; text: "Exit"
                                 onClicked: vesselManager.closeWorkspace()
-                                background: Rectangle { color: closeWorkspaceBtn.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 50; implicitHeight: 28 }
+                                background: Rectangle { color: closeWorkspaceBtn.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 50; implicitHeight: 28 }
                                 contentItem: Text { text: "Exit"; color: textMain; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                             }
                         }
@@ -329,9 +338,9 @@ ApplicationWindow {
                         TabBar {
                             id: sidebarTabBar; Layout.fillWidth: true; Layout.preferredHeight: 40; currentIndex: 2
                             background: Rectangle { color: "transparent" }
-                            TabButton { id: t1; width: 85; height: 40; contentItem: Text { text: "🤖"; font.pixelSize: 18; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: sidebarTabBar.currentIndex === 0 ? accentColor : textMuted } }
-                            TabButton { id: t2; width: 85; height: 40; contentItem: Text { text: "📦"; font.pixelSize: 18; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: sidebarTabBar.currentIndex === 1 ? accentColor : textMuted } }
-                            TabButton { id: t3; width: 85; height: 40; contentItem: Text { text: "💧"; font.pixelSize: 18; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: sidebarTabBar.currentIndex === 2 ? accentColor : textMuted } }
+                            TabButton { id: t1; width: 85; height: 40; text: "AI"; font.pixelSize: 14; contentItem: Text { text: "AI"; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: sidebarTabBar.currentIndex === 0 ? accentColor : textMuted } }
+                            TabButton { id: t2; width: 85; height: 40; text: "Files"; font.pixelSize: 14; contentItem: Text { text: "Files"; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: sidebarTabBar.currentIndex === 1 ? accentColor : textMuted } }
+                            TabButton { id: t3; width: 85; height: 40; text: "Notes"; font.pixelSize: 14; contentItem: Text { text: "Notes"; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; color: sidebarTabBar.currentIndex === 2 ? accentColor : textMuted } }
                         }
 
                         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: borderDark }
@@ -348,13 +357,13 @@ ApplicationWindow {
 
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        Text { text: "✦ AI Chat"; color: textMain; font.bold: true; font.pixelSize: 13 }
+                                        Text { text: "AI Chat"; color: textMain; font.bold: true; font.pixelSize: 13 }
                                         Item { Layout.fillWidth: true }
                                         Button {
-                                            text: "New 💬"
+                                            text: "New"
                                             onClicked: vesselManager.newConversation()
-                                            background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 60; implicitHeight: 26 }
-                                            contentItem: Text { text: "New 💬"; color: textMain; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 60; implicitHeight: 26 }
+                                            contentItem: Text { text: "New"; color: textMain; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                         }
                                     }
 
@@ -366,8 +375,8 @@ ApplicationWindow {
                                             model: vesselManager.aiConversations
                                             delegate: ItemDelegate {
                                                 width: recentChatsList.width; height: 28
-                                                background: Rectangle { color: (vesselManager.activeChatId === modelData.id) ? "#2a2a2a" : (hovered ? "#222222" : "transparent"); radius: 4 }
-                                                contentItem: Text { text: "💬  " + modelData.title; color: textMain; font.pixelSize: 12; elide: Text.ElideRight }
+                                                background: Rectangle { color: (vesselManager.activeChatId === modelData.id) ? activeBg : (hovered ? hoverBg : "transparent"); radius: 4 }
+                                                contentItem: Text { text: modelData.title; color: textMain; font.pixelSize: 12; elide: Text.ElideRight }
                                                 onClicked: vesselManager.selectConversation(modelData.id)
                                             }
                                         }
@@ -408,7 +417,7 @@ ApplicationWindow {
                                         Button {
                                             text: "+ Upload"
                                             onClicked: fileUploadDialog.open()
-                                            background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 70; implicitHeight: 26 }
+                                            background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 70; implicitHeight: 26 }
                                             contentItem: Text { text: "+ Upload"; color: textMain; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                         }
                                     }
@@ -427,8 +436,8 @@ ApplicationWindow {
 
                                             delegate: ItemDelegate { 
                                                 width: parent.width; height: 28
-                                                contentItem: Text { text: "📦 " + modelData; color: textMain; font.pixelSize: 12; elide: Text.ElideMiddle }
-                                                background: Rectangle { color: hovered ? "#222222" : "transparent"; radius: 4 }
+                                                contentItem: Text { text: modelData; color: textMain; font.pixelSize: 12; elide: Text.ElideMiddle }
+                                                background: Rectangle { color: hovered ? hoverBg : "transparent"; radius: 4 }
                                                 onClicked: vesselManager.handleMaterialClick(modelData)
                                             }
                                         }
@@ -446,14 +455,16 @@ ApplicationWindow {
                                         Text { text: "Droplets (Notes)"; color: textMain; font.bold: true; font.pixelSize: 13 }
                                         Item { Layout.fillWidth: true }
                                         Button {
-                                            text: "+ 📄"
+                                            text: "+"; font.pixelSize: 14
                                             onClicked: vesselManager.createNewAsset("", false)
-                                            background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 44; implicitHeight: 26 }
+                                            contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 44; implicitHeight: 26 }
                                         }
                                         Button {
-                                            text: "+ 📁"
+                                            text: "+"; font.pixelSize: 14
                                             onClicked: vesselManager.createNewAsset("", true)
-                                            background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 44; implicitHeight: 26 }
+                                            contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                            background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 44; implicitHeight: 26 }
                                         }
                                     }
 
@@ -466,10 +477,10 @@ ApplicationWindow {
                                             delegate: ItemDelegate {
                                                 id: dropletDelegate
                                                 width: dropletsListView.width; height: 30
-                                                background: Rectangle { color: hovered ? "#222222" : "transparent"; radius: 4 }
-                                                
+                                                background: Rectangle { color: hovered ? hoverBg : "transparent"; radius: 4 }
+
                                                 contentItem: Text {
-                                                    text: (modelData.isFile ? "📄  " : "📁  ") + modelData.name
+                                                    text: modelData.name
                                                     color: (vesselManager.activeFileName === modelData.name) ? accentColor : textMain
                                                     font.pixelSize: modelData.isFile ? 12 : 13
                                                     font.bold: !modelData.isFile
@@ -516,8 +527,8 @@ ApplicationWindow {
                             
                             Rectangle {
                                 width: 220; height: 32; color: bgPanel; radius: 6; border.color: borderDark
-                                Text { 
-                                    text: sidebarTabBar.currentIndex === 0 ? "🤖 AI Assistant" : (vesselManager.activeFileName ? vesselManager.activeFileName : "No File Open")
+                                Text {
+                                    text: sidebarTabBar.currentIndex === 0 ? "AI Assistant" : (vesselManager.activeFileName ? vesselManager.activeFileName : "No File Open")
                                     color: textMain; anchors.centerIn: parent; font.pixelSize: 12; font.bold: true; elide: Text.ElideMiddle; width: parent.width - 20 
                                 }
                             }
@@ -525,53 +536,56 @@ ApplicationWindow {
 
                             Button {
                                 id: upcomingToggle
-                                text: window.showUpcomingPanel ? "📋" : "📋"; width: 34; height: 32
+                                text: "☰"; font.pixelSize: 14; width: 34; height: 32
                                 onClicked: window.showUpcomingPanel = !window.showUpcomingPanel
                                 ToolTip.visible: hovered
                                 ToolTip.text: window.showUpcomingPanel ? "Hide Upcoming Events" : "Show Upcoming Events"
                                 ToolTip.delay: 400
+                                contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 background: Rectangle {
-                                    color: window.showUpcomingPanel ? "#3a3a3a" : (upcomingToggle.hovered ? "#2a2a2a" : "transparent")
+                                    color: window.showUpcomingPanel ? buttonHoverBg : (upcomingToggle.hovered ? activeBg : "transparent")
                                     radius: 6; border.color: window.showUpcomingPanel ? accentColor : borderDark; border.width: 1
                                 }
                             }
 
                             Button {
                                 id: calendarButton
-                                text: "📅"; width: 34; height: 32
+                                text: "📅"; font.pixelSize: 14; width: 34; height: 32
                                 onClicked: openCalendar()
                                 ToolTip.visible: hovered
                                 ToolTip.text: "Calendar"
                                 ToolTip.delay: 400
+                                contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 background: Rectangle {
-                                    color: calendarButton.hovered ? "#2a2a2a" : "transparent"
+                                    color: calendarButton.hovered ? activeBg : "transparent"
                                     radius: 6; border.color: borderDark; border.width: 1
                                 }
                             }
 
                             Button {
                                 id: settingsButton
-                                text: "⚙️"; width: 34; height: 32
+                                text: "⚙"; font.pixelSize: 14; width: 34; height: 32
                                 onClicked: settingsPopup.open()
                                 ToolTip.visible: hovered
                                 ToolTip.text: "Settings"
                                 ToolTip.delay: 400
+                                contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 background: Rectangle {
-                                    color: settingsButton.hovered ? "#2a2a2a" : "transparent"
+                                    color: settingsButton.hovered ? activeBg : "transparent"
                                     radius: 6; border.color: borderDark; border.width: 1
                                 }
                             }
 
                             Button {
                                 action: toggleRenderAction
-                                text: window.renderModeActive ? "✏️ Edit Source" : "👁️ View Rendered"
+                                text: window.renderModeActive ? "Edit Source" : "View Rendered"
                                 visible: sidebarTabBar.currentIndex === 0 ? false : !canvasContainer.isPdfActive
                                 
                                 ToolTip.visible: hovered
                                 ToolTip.text: "Toggle Render Mode (Ctrl + M)"
                                 ToolTip.delay: 400
                                 background: Rectangle {
-                                    color: parent.hovered ? "#2a2a2a" : "transparent"
+                                    color: parent.hovered ? activeBg : "transparent"
                                     radius: 6; border.color: borderDark; border.width: 1
                                 }
                             }
@@ -646,8 +660,8 @@ ApplicationWindow {
                                         visible: canvasContainer.isPdfActive && (pdfEngineDoc.status !== PdfDocument.Ready)
 
                                         Text {
-                                            text: pdfEngineDoc.status === PdfDocument.Loading ? "⏳ Loading PDF Engine..." : "⚠️ Built-in PDF Engine Failed to Render"
-                                            color: pdfEngineDoc.status === PdfDocument.Loading ? textMain : "#ff5555"
+                                            text: pdfEngineDoc.status === PdfDocument.Loading ? "Loading PDF Engine..." : "Built-in PDF Engine Failed to Render"
+                                            color: pdfEngineDoc.status === PdfDocument.Loading ? textMain : dangerColor
                                             font.bold: true; font.pixelSize: 15; horizontalAlignment: Text.AlignHCenter
                                         }
                                         Text {
@@ -655,14 +669,14 @@ ApplicationWindow {
                                             color: textMuted; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter
                                             visible: pdfEngineDoc.status !== PdfDocument.Loading
                                         }
-                                            Button {
-                                                text: "↗️ Open in System PDF Viewer"
-                                                anchors.horizontalCenter: parent.horizontalCenter
-                                                visible: pdfEngineDoc.status !== PdfDocument.Loading
-                                                onClicked: Qt.openUrlExternally(vesselManager.activeFileUrl)
-                                                background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 32 }
-                                                contentItem: Text { text: "↗️ Open in System PDF Viewer"; color: textMain; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                                            }
+                                        Button {
+                                            text: "Open in System PDF Viewer"
+                                            anchors.horizontalCenter: parent.horizontalCenter
+                                            visible: pdfEngineDoc.status !== PdfDocument.Ready
+                                            onClicked: Qt.openUrlExternally(vesselManager.activeFileUrl)
+                                            background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 32 }
+                                            contentItem: Text { text: "Open in System PDF Viewer"; color: textMain; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                        }
                                     }
                                 }
                             }
@@ -688,9 +702,9 @@ ApplicationWindow {
                                                 
                                                 Rectangle {
                                                     width: 32; height: 32; radius: 16
-                                                    color: modelData.sender === "user" ? "#303030" : "#4b2b7a"
+                                                    color: modelData.sender === "user" ? Qt.darker(bgCard, 1.25) : Qt.darker(accentColor, 1.4)
                                                     Layout.alignment: Qt.AlignTop
-                                                    Text { text: modelData.sender === "user" ? "U" : "✦"; color: textMain; font.bold: true; font.pixelSize: 12; anchors.centerIn: parent }
+                                                    Text { text: modelData.sender === "user" ? "U" : "AI"; color: textMain; font.bold: true; font.pixelSize: 12; anchors.centerIn: parent }
                                                 }
 
                                                 ColumnLayout {
@@ -781,15 +795,15 @@ ApplicationWindow {
                                             }
 
                                             Button {
-                                                text: "➔"; Layout.preferredWidth: 36; Layout.preferredHeight: 36
+                                                text: "▶"; font.pixelSize: 14; Layout.preferredWidth: 36; Layout.preferredHeight: 36
                                                 enabled: aiConsoleInputBox.text.trim() !== ""
+                                                contentItem: Text { text: parent.text; color: textOnAccent; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                                 background: Rectangle {
-                                                    color: parent.enabled ? accentColor : "#252525"
+                                                    color: parent.enabled ? accentColor : disabledBg
                                                     radius: 18
                                                     border.color: parent.enabled ? accentColor : "transparent"
                                                     border.width: 1
                                                 }
-                                                contentItem: Text { text: "➔"; color: parent.enabled ? "#000000" : textMuted; font.bold: true; font.pixelSize: 16; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                                 onClicked: {
                                                     vesselManager.submitUserMessage(aiConsoleInputBox.text, vesselManager.webSearchEnabled)
                                                     aiConsoleInputBox.text = ""
@@ -818,12 +832,13 @@ ApplicationWindow {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Text { text: "📅 Upcoming"; color: textMain; font.bold: true; font.pixelSize: 13 }
+                            Text { text: "Upcoming"; color: textMain; font.bold: true; font.pixelSize: 13 }
                             Item { Layout.fillWidth: true }
-                            Text {
-                                text: "✕"; color: textMuted; font.pixelSize: 12
-                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.showUpcomingPanel = false }
-                            }
+                        Text {
+                            text: "✕"; color: textMuted; font.pixelSize: 12
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.showUpcomingPanel = false }
+                        }
+
                         }
 
                         Rectangle { Layout.fillWidth: true; height: 1; color: borderDark }
@@ -843,7 +858,7 @@ ApplicationWindow {
 
                                 delegate: ItemDelegate {
                                     width: parent.width; height: 50; hoverEnabled: true
-                                    background: Rectangle { color: parent.hovered ? "#222222" : "transparent"; radius: 4 }
+                                    background: Rectangle { color: parent.hovered ? hoverBg : "transparent"; radius: 4 }
 
                                     ColumnLayout {
                                         anchors.fill: parent; anchors.margins: 6; spacing: 2
@@ -855,7 +870,7 @@ ApplicationWindow {
                                                 var tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
                                                 var y = tomorrow.getFullYear(), m = ("0"+(tomorrow.getMonth()+1)).slice(-2), d = ("0"+tomorrow.getDate()).slice(-2)
                                                 var tomorrowStr = y + "-" + m + "-" + d
-                                                modelData.date === tomorrowStr ? "#ff5555" : textMain
+                                                modelData.date === tomorrowStr ? dangerColor : textMain
                                             }
                                             font.pixelSize: 12; font.bold: true
                                             elide: Text.ElideRight; Layout.fillWidth: true
@@ -947,18 +962,18 @@ ApplicationWindow {
                     Button {
                         id: browseBtn; text: "Browse"
                         onClicked: folderPickerDialog.open()
-                        background: Rectangle { color: browseBtn.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 30 }
-                        contentItem: Text { text: "Browse"; color: textMain; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                background: Rectangle { color: browseBtn.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 30 }
+                                contentItem: Text { text: "Browse"; color: textMain; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            }
+                        }
                     }
-                }
-            }
 
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter; spacing: 15
-                Button {
-                    text: "Cancel"
-                    onClicked: newVesselPopup.close()
-                    background: Rectangle { color: parent.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 80; implicitHeight: 34 }
+                    Row {
+                        anchors.horizontalCenter: parent.horizontalCenter; spacing: 15
+                        Button {
+                            text: "Cancel"
+                            onClicked: newVesselPopup.close()
+                            background: Rectangle { color: parent.hovered ? activeBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 80; implicitHeight: 34 }
                     contentItem: Text { text: "Cancel"; color: textMain; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
                 Button {
@@ -973,10 +988,10 @@ ApplicationWindow {
                         }
                     }
                     background: Rectangle {
-                        color: parent.enabled ? accentColor : "#252525"
+                        color: parent.enabled ? accentColor : disabledBg
                         radius: 6; implicitWidth: 80; implicitHeight: 34
                     }
-                    contentItem: Text { text: "Create"; color: parent.enabled ? "#000000" : textMuted; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    contentItem: Text { text: "Create"; color: parent.enabled ? textOnAccent : textMuted; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
         }
@@ -1065,19 +1080,19 @@ ApplicationWindow {
             // Header
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: "📅 Calendar"; color: textMain; font.bold: true; font.pixelSize: 16 }
+                Text { text: "Calendar"; color: textMain; font.bold: true; font.pixelSize: 16 }
                 Item { Layout.fillWidth: true }
                 Button {
                     text: "Today"
                     onClicked: calendarPopup.goToday()
                     ToolTip.visible: hovered; ToolTip.text: "Jump to today"
-                    background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 26 }
+                    background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 26 }
                     contentItem: Text { text: "Today"; color: accentColor; font.pixelSize: 11; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; leftPadding: 8; rightPadding: 8 }
                 }
                 Button {
-                    text: "✕"; onClicked: calendarPopup.close()
+                    text: "✕"; font.pixelSize: 14; onClicked: calendarPopup.close()
+                    contentItem: Text { text: parent.text; color: textMuted; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     background: Rectangle { color: "transparent"; implicitWidth: 28; implicitHeight: 28 }
-                    contentItem: Text { text: "✕"; color: textMuted; font.pixelSize: 14 }
                 }
             }
 
@@ -1099,7 +1114,7 @@ ApplicationWindow {
                     background: Rectangle { color: bgDark; border.color: borderDark; radius: 4; implicitHeight: 28 }
                 }
                 Button {
-                    text: "+"
+                    text: "+"; font.pixelSize: 14
                     onClicked: {
                         if (calEventTitle.text.trim() && calEventDate.text.trim()) {
                             vesselManager.createCalendarEvent(calEventTitle.text, calEventDate.text)
@@ -1108,8 +1123,8 @@ ApplicationWindow {
                         }
                     }
                     ToolTip.visible: hovered; ToolTip.text: "Add event"
+                    contentItem: Text { text: parent.text; color: textOnAccent; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     background: Rectangle { color: accentColor; radius: 6; implicitWidth: 30; implicitHeight: 28 }
-                    contentItem: Text { text: "+"; color: "#000"; font.bold: true; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
 
@@ -1117,17 +1132,17 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth: true; Layout.topMargin: 4
                 Button {
-                    text: "◀"; onClicked: calendarPopup.prevMonth()
-                    background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 4; implicitWidth: 28; implicitHeight: 26 }
-                    contentItem: Text { text: "◀"; color: accentColor; font.pixelSize: 12 }
+                    text: "◀"; font.pixelSize: 14; onClicked: calendarPopup.prevMonth()
+                    contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 4; implicitWidth: 28; implicitHeight: 26 }
                 }
                 Item { Layout.fillWidth: true }
                 Text { text: calendarPopup.monthLabel(calendarPopup.displayMonth); color: textMain; font.bold: true; font.pixelSize: 15 }
                 Item { Layout.fillWidth: true }
                 Button {
-                    text: "▶"; onClicked: calendarPopup.nextMonth()
-                    background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 4; implicitWidth: 28; implicitHeight: 26 }
-                    contentItem: Text { text: "▶"; color: accentColor; font.pixelSize: 12 }
+                    text: "▶"; font.pixelSize: 14; onClicked: calendarPopup.nextMonth()
+                    contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 4; implicitWidth: 28; implicitHeight: 26 }
                 }
             }
 
@@ -1158,7 +1173,7 @@ ApplicationWindow {
                         visible: modelData.valid
                         radius: 6
                         color: modelData.isSelected ? accentColor
-                             : modelData.isToday ? "#3a3a3a"
+                             : modelData.isToday ? buttonHoverBg
                              : "transparent"
                         border.color: modelData.isToday && !modelData.isSelected ? accentColor : "transparent"
                         border.width: modelData.isToday && !modelData.isSelected ? 1 : 0
@@ -1173,7 +1188,7 @@ ApplicationWindow {
                             anchors.fill: parent; spacing: 2
                             Text {
                                 text: modelData.dayNum
-                                color: modelData.isSelected ? "#000" : textMain
+                                color: modelData.isSelected ? textOnAccent : textMain
                                 font.pixelSize: 12; font.bold: modelData.isToday
                                 horizontalAlignment: Text.AlignHCenter
                                 Layout.fillWidth: true; Layout.topMargin: 3
@@ -1212,7 +1227,7 @@ ApplicationWindow {
 
                     delegate: ItemDelegate {
                         width: parent.width; height: 34; hoverEnabled: true
-                        background: Rectangle { color: parent.hovered ? "#2a2a2a" : "transparent"; radius: 4 }
+                        background: Rectangle { color: parent.hovered ? activeBg : "transparent"; radius: 4 }
                         RowLayout {
                             anchors.fill: parent; anchors.margins: 4; spacing: 8
                             Rectangle { width: 3; height: 20; radius: 2; color: accentColor }
@@ -1222,13 +1237,13 @@ ApplicationWindow {
                                 elide: Text.ElideRight; Layout.fillWidth: true
                             }
                             Button {
-                                text: "✕"; width: 18; height: 18
-                                onClicked: {
-                                    vesselManager.deleteCalendarEvent(modelData.id)
-                                    calendarPopup.loadEvents()
-                                }
-                                background: Rectangle { color: "transparent"; radius: 2 }
-                                contentItem: Text { text: "✕"; color: textMuted; font.pixelSize: 8 }
+                                text: "✕"; font.pixelSize: 14; width: 18; height: 18
+onClicked: {
+                                        vesselManager.deleteCalendarEvent(modelData.id)
+                                        calendarPopup.loadEvents()
+                                    }
+                                    contentItem: Text { text: parent.text; color: textMuted; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                    background: Rectangle { color: "transparent"; radius: 2 }
                             }
                         }
                     }
@@ -1248,7 +1263,7 @@ ApplicationWindow {
     Popup {
         id: settingsPopup
         anchors.centerIn: parent
-        width: 480; height: 480; modal: true; focus: true
+        width: 480; height: 640; modal: true; focus: true
         closePolicy: Popup.CloseOnEscape
 
         background: Rectangle { color: bgCard; border.color: borderDark; radius: 8 }
@@ -1269,6 +1284,17 @@ ApplicationWindow {
             claudeKeyField.text = vesselManager.anthropicApiKey
         }
 
+        function syncThemeFields() {
+            themeBgDarkField.text = vesselManager.themeBgDark
+            themeBgCardField.text = vesselManager.themeBgCard
+            themeBgPanelField.text = vesselManager.themeBgPanel
+            themeBorderField.text = vesselManager.themeBorderColor
+            themeTextPrimaryField.text = vesselManager.themeTextPrimary
+            themeTextSecondaryField.text = vesselManager.themeTextSecondary
+            themeAccentField.text = vesselManager.themeAccent
+            themeDangerField.text = vesselManager.themeDanger
+        }
+
         function saveSettings() {
             var idx = providerCombo.currentIndex
             var provider = settingsPopup.providerKeys[idx]
@@ -1280,7 +1306,22 @@ ApplicationWindow {
             settingsPopup.close()
         }
 
-        onOpened: syncFromManager()
+        function resetThemeDefaults() {
+            vesselManager.setThemeColor("bgDark", "#141414")
+            vesselManager.setThemeColor("bgCard", "#1e1e1e")
+            vesselManager.setThemeColor("bgPanel", "#181818")
+            vesselManager.setThemeColor("borderColor", "#2a2a2a")
+            vesselManager.setThemeColor("textPrimary", "#ffffff")
+            vesselManager.setThemeColor("textSecondary", "#7a7a7a")
+            vesselManager.setThemeColor("accent", "#bb86fc")
+            vesselManager.setThemeColor("danger", "#ff5555")
+            syncThemeFields()
+        }
+
+        onOpened: {
+            syncFromManager()
+            syncThemeFields()
+        }
 
         Column {
             anchors.fill: parent; anchors.margins: 25; spacing: 18
@@ -1335,10 +1376,11 @@ ApplicationWindow {
                     }
                     Button {
                         id: toggleGeminiBtn
-                        text: geminiKeyField.echoMode === TextInput.Password ? "👁️" : "🙈"
+                        text: geminiKeyField.echoMode === TextInput.Password ? "◉" : "◯"; font.pixelSize: 14
                         width: 36; height: 36
                         onClicked: geminiKeyField.echoMode = geminiKeyField.echoMode === TextInput.Password ? TextInput.Normal : TextInput.Password
-                        background: Rectangle { color: toggleGeminiBtn.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                        contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        background: Rectangle { color: toggleGeminiBtn.hovered ? activeBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
                     }
                 }
             }
@@ -1358,10 +1400,11 @@ ApplicationWindow {
                     }
                     Button {
                         id: toggleGptBtn
-                        text: chatgptKeyField.echoMode === TextInput.Password ? "👁️" : "🙈"
+                        text: chatgptKeyField.echoMode === TextInput.Password ? "◉" : "◯"; font.pixelSize: 14
                         width: 36; height: 36
                         onClicked: chatgptKeyField.echoMode = chatgptKeyField.echoMode === TextInput.Password ? TextInput.Normal : TextInput.Password
-                        background: Rectangle { color: toggleGptBtn.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                        contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        background: Rectangle { color: toggleGptBtn.hovered ? activeBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
                     }
                 }
             }
@@ -1381,11 +1424,174 @@ ApplicationWindow {
                     }
                     Button {
                         id: toggleClaudeBtn
-                        text: claudeKeyField.echoMode === TextInput.Password ? "👁️" : "🙈"
+                        text: claudeKeyField.echoMode === TextInput.Password ? "◉" : "◯"; font.pixelSize: 14
                         width: 36; height: 36
                         onClicked: claudeKeyField.echoMode = claudeKeyField.echoMode === TextInput.Password ? TextInput.Normal : TextInput.Password
-                        background: Rectangle { color: toggleClaudeBtn.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                        contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        background: Rectangle { color: toggleClaudeBtn.hovered ? activeBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
                     }
+                }
+            }
+
+            // ── Theme Colors ──
+            Rectangle { width: parent.width; height: 1; color: borderDark }
+
+            Text { text: "Theme Colors"; color: textMain; font.pixelSize: 16; font.bold: true; Layout.topMargin: 4 }
+
+            Column { width: parent.width; spacing: 5
+
+                Row { width: parent.width; spacing: 8
+                    Text { text: "Bg Dark"; color: textMuted; font.pixelSize: 12; width: 100; anchors.verticalCenter: parent.verticalCenter }
+                    TextField {
+                        id: themeBgDarkField; text: "#141414"; width: parent.width - 130; height: 26
+                        color: textMain; font.pixelSize: 12; leftPadding: 6; placeholderText: "#RRGGBB"
+                        validator: RegularExpressionValidator {
+                            regularExpression: /^#[0-9a-fA-F]{6}$/
+                        }
+                        background: Rectangle {
+                            color: bgDark; border.color: borderDark; radius: 4
+                        }
+                        onTextEdited: {
+                            if (text.length === 7 && text[0] === "#")
+                                vesselManager.setThemeColor("bgDark", text)
+                        }
+                    }
+                    Rectangle { width: 20; height: 20; radius: 3; border.color: borderDark; border.width: 1; color: themeBgDarkField.text }
+                }
+                Row { width: parent.width; spacing: 8
+                    Text { text: "Bg Card"; color: textMuted; font.pixelSize: 12; width: 100; anchors.verticalCenter: parent.verticalCenter }
+                    TextField {
+                        id: themeBgCardField; text: "#1e1e1e"; width: parent.width - 130; height: 26
+                        color: textMain; font.pixelSize: 12; leftPadding: 6; placeholderText: "#RRGGBB"
+                        validator: RegularExpressionValidator {
+                            regularExpression: /^#[0-9a-fA-F]{6}$/
+                        }
+                        background: Rectangle {
+                            color: bgDark; border.color: borderDark; radius: 4
+                        }
+                        onTextEdited: {
+                            if (text.length === 7 && text[0] === "#")
+                                vesselManager.setThemeColor("bgCard", text)
+                        }
+                    }
+                    Rectangle { width: 20; height: 20; radius: 3; border.color: borderDark; border.width: 1; color: themeBgCardField.text }
+                }
+                Row { width: parent.width; spacing: 8
+                    Text { text: "Bg Panel"; color: textMuted; font.pixelSize: 12; width: 100; anchors.verticalCenter: parent.verticalCenter }
+                    TextField {
+                        id: themeBgPanelField; text: "#181818"; width: parent.width - 130; height: 26
+                        color: textMain; font.pixelSize: 12; leftPadding: 6; placeholderText: "#RRGGBB"
+                        validator: RegularExpressionValidator {
+                            regularExpression: /^#[0-9a-fA-F]{6}$/
+                        }
+                        background: Rectangle {
+                            color: bgDark; border.color: borderDark; radius: 4
+                        }
+                        onTextEdited: {
+                            if (text.length === 7 && text[0] === "#")
+                                vesselManager.setThemeColor("bgPanel", text)
+                        }
+                    }
+                    Rectangle { width: 20; height: 20; radius: 3; border.color: borderDark; border.width: 1; color: themeBgPanelField.text }
+                }
+                Row { width: parent.width; spacing: 8
+                    Text { text: "Border"; color: textMuted; font.pixelSize: 12; width: 100; anchors.verticalCenter: parent.verticalCenter }
+                    TextField {
+                        id: themeBorderField; text: "#2a2a2a"; width: parent.width - 130; height: 26
+                        color: textMain; font.pixelSize: 12; leftPadding: 6; placeholderText: "#RRGGBB"
+                        validator: RegularExpressionValidator {
+                            regularExpression: /^#[0-9a-fA-F]{6}$/
+                        }
+                        background: Rectangle {
+                            color: bgDark; border.color: borderDark; radius: 4
+                        }
+                        onTextEdited: {
+                            if (text.length === 7 && text[0] === "#")
+                                vesselManager.setThemeColor("borderColor", text)
+                        }
+                    }
+                    Rectangle { width: 20; height: 20; radius: 3; border.color: borderDark; border.width: 1; color: themeBorderField.text }
+                }
+                Row { width: parent.width; spacing: 8
+                    Text { text: "Text Primary"; color: textMuted; font.pixelSize: 12; width: 100; anchors.verticalCenter: parent.verticalCenter }
+                    TextField {
+                        id: themeTextPrimaryField; text: "#ffffff"; width: parent.width - 130; height: 26
+                        color: textMain; font.pixelSize: 12; leftPadding: 6; placeholderText: "#RRGGBB"
+                        validator: RegularExpressionValidator {
+                            regularExpression: /^#[0-9a-fA-F]{6}$/
+                        }
+                        background: Rectangle {
+                            color: bgDark; border.color: borderDark; radius: 4
+                        }
+                        onTextEdited: {
+                            if (text.length === 7 && text[0] === "#")
+                                vesselManager.setThemeColor("textPrimary", text)
+                        }
+                    }
+                    Rectangle { width: 20; height: 20; radius: 3; border.color: borderDark; border.width: 1; color: themeTextPrimaryField.text }
+                }
+                Row { width: parent.width; spacing: 8
+                    Text { text: "Text Secondary"; color: textMuted; font.pixelSize: 12; width: 100; anchors.verticalCenter: parent.verticalCenter }
+                    TextField {
+                        id: themeTextSecondaryField; text: "#7a7a7a"; width: parent.width - 130; height: 26
+                        color: textMain; font.pixelSize: 12; leftPadding: 6; placeholderText: "#RRGGBB"
+                        validator: RegularExpressionValidator {
+                            regularExpression: /^#[0-9a-fA-F]{6}$/
+                        }
+                        background: Rectangle {
+                            color: bgDark; border.color: borderDark; radius: 4
+                        }
+                        onTextEdited: {
+                            if (text.length === 7 && text[0] === "#")
+                                vesselManager.setThemeColor("textSecondary", text)
+                        }
+                    }
+                    Rectangle { width: 20; height: 20; radius: 3; border.color: borderDark; border.width: 1; color: themeTextSecondaryField.text }
+                }
+                Row { width: parent.width; spacing: 8
+                    Text { text: "Accent"; color: textMuted; font.pixelSize: 12; width: 100; anchors.verticalCenter: parent.verticalCenter }
+                    TextField {
+                        id: themeAccentField; text: "#bb86fc"; width: parent.width - 130; height: 26
+                        color: textMain; font.pixelSize: 12; leftPadding: 6; placeholderText: "#RRGGBB"
+                        validator: RegularExpressionValidator {
+                            regularExpression: /^#[0-9a-fA-F]{6}$/
+                        }
+                        background: Rectangle {
+                            color: bgDark; border.color: borderDark; radius: 4
+                        }
+                        onTextEdited: {
+                            if (text.length === 7 && text[0] === "#")
+                                vesselManager.setThemeColor("accent", text)
+                        }
+                    }
+                    Rectangle { width: 20; height: 20; radius: 3; border.color: borderDark; border.width: 1; color: themeAccentField.text }
+                }
+                Row { width: parent.width; spacing: 8
+                    Text { text: "Danger"; color: textMuted; font.pixelSize: 12; width: 100; anchors.verticalCenter: parent.verticalCenter }
+                    TextField {
+                        id: themeDangerField; text: "#ff5555"; width: parent.width - 130; height: 26
+                        color: textMain; font.pixelSize: 12; leftPadding: 6; placeholderText: "#RRGGBB"
+                        validator: RegularExpressionValidator {
+                            regularExpression: /^#[0-9a-fA-F]{6}$/
+                        }
+                        background: Rectangle {
+                            color: bgDark; border.color: borderDark; radius: 4
+                        }
+                        onTextEdited: {
+                            if (text.length === 7 && text[0] === "#")
+                                vesselManager.setThemeColor("danger", text)
+                        }
+                    }
+                    Rectangle { width: 20; height: 20; radius: 3; border.color: borderDark; border.width: 1; color: themeDangerField.text }
+                }
+            }
+
+            Row {
+                Button {
+                    text: "Reset to Defaults"
+                    onClicked: settingsPopup.resetThemeDefaults()
+                    background: Rectangle { color: parent.hovered ? buttonHoverBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 120; implicitHeight: 28 }
+                    contentItem: Text { text: "Reset to Defaults"; color: textMain; font.pixelSize: 11; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
 
@@ -1397,14 +1603,14 @@ ApplicationWindow {
                 Button {
                     text: "Cancel"
                     onClicked: settingsPopup.close()
-                    background: Rectangle { color: parent.hovered ? "#2a2a2a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 80; implicitHeight: 34 }
+                    background: Rectangle { color: parent.hovered ? activeBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitWidth: 80; implicitHeight: 34 }
                     contentItem: Text { text: "Cancel"; color: textMain; font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
                 Button {
                     text: "Save"
                     onClicked: settingsPopup.saveSettings()
                     background: Rectangle { color: accentColor; radius: 6; implicitWidth: 80; implicitHeight: 34 }
-                    contentItem: Text { text: "Save"; color: "#000000"; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    contentItem: Text { text: "Save"; color: textOnAccent; font.pixelSize: 13; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 }
             }
         }
