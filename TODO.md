@@ -1,3 +1,14 @@
-TODO: 
+# TODO: 
+- [ ] **Flashcards + Spaced Repetition** — AI generates Q/A pairs from materials; built-in review loop with SM-2 scheduling
+- [ ] **Quiz Yourself Mode** — AI generates multiple-choice, short-answer, fill-in-the-blank quizzes; score tracking
+- [ ] **Study Plan Generator** — AI creates a day-by-day study schedule from your materials and deadline
+- [ ] **Concept Mapping** — AI identifies key concepts and draws connections between them
+- [ ] **Automated Study Guides** — structured printable study guide generated from materials
+- [ ] **Writing Feedback** — essay/assignment review with argument, clarity, and grammar analysis
+- [ ] **Quick Capture** — global hotkey / system tray for rapid note entry
+- [ ] **Document Annotation** — highlight PDFs and materials; highlights become notes
+- [ ] **LaTeX / Math Rendering** — inline math in markdown view for STEM students
 - [ ] **Full-Text Search in Droplets** — BM25 search should also index notes, not just materials
-- [ ] **Progress Indicators** — upload progress bar, AI status messages, toast notifications
+- [ ] **Syntax Highlighting** — code block highlighting in the editor
+- [ ] **One-Click Installer** — package as standalone binary (PyInstaller / Nuitka)
+- [ ] **Multi-Device Sync** — export/import vessels; optional cloud or Syncthing integration
