@@ -23,7 +23,7 @@ Pre-built binaries are available on the [Releases](https://github.com/iamsurjog/
 ```bash
 # Clone the repo
 git clone https://github.com/iamsurjog/Vessel.git
-cd vessel
+cd Vessel
 
 # Create and activate a virtual environment
 python -m venv .venv
@@ -37,4 +37,4 @@ pip install -r requirements.txt
 python main.py
 ```
 
-> **Note:** Development targets Python 3.14. Nearby versions (3.12, 3.13) may work, but have not been tested.
+> **Note:** Development targets Python 3.14.5. Nearby versions (3.12, 3.13) may work, but have not been tested.
