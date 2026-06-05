@@ -75,9 +75,11 @@ class VesselManager(QObject):
     chatHistoryChanged = Signal()
     webSearchEnabledChanged = Signal()
     aiProcessingChanged = Signal()
+    aiStatusChanged = Signal()
     aiResponseReceived = Signal(str)  # emitted from worker thread with final answer
-    providerConfigChanged = Signal()
+    notificationEmitted = Signal(str, str)  # message, color (#hex or "info"/"error"/"success")
     eventsChanged = Signal()
+    providerConfigChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -101,6 +103,7 @@ class VesselManager(QObject):
 
         # Processing state for loading indicator
         self._ai_processing = False
+        self._ai_status_text = ""
 
         # Connect response signal to main thread handler
         self.aiResponseReceived.connect(self._on_ai_response)
@@ -326,6 +329,17 @@ class VesselManager(QObject):
     def aiProcessing(self):
         return self._ai_processing
 
+    @Property(str, notify=aiStatusChanged)
+    def aiStatus(self):
+        return self._ai_status_text
+
+    def _set_ai_status(self, text: str):
+        self._ai_status_text = text
+        self.aiStatusChanged.emit()
+
+    def _notify(self, message: str, color: str = "#bb86fc"):
+        self.notificationEmitted.emit(message, color)
+
     # ------------------------------------------------------------------
     # Chat properties & slots
     # ------------------------------------------------------------------
@@ -380,6 +394,7 @@ class VesselManager(QObject):
         # Show loading state
         self._ai_processing = True
         self.aiProcessingChanged.emit()
+        self._set_ai_status("Thinking...")
 
         # Extract previous messages for conversational context
         # Exclude the current user message — it's already embedded in the prompt
@@ -397,6 +412,7 @@ class VesselManager(QObject):
         """Run answerTo in a background thread, emit result on main thread."""
         try:
             if vessel_path:
+                self._set_ai_status("Searching documents...")
                 ai_response = answerTo(
                     vessel_path, msg_text, web_search_enabled,
                     chat_history=chat_history,
@@ -407,8 +423,11 @@ class VesselManager(QObject):
 
             if not ai_response:
                 ai_response = "✦ *AI Core error: Empty inference buffer returned from background pipeline host.*"
+            else:
+                self._set_ai_status("Response ready")
         except Exception as e:
             ai_response = f"⚠️ *Failed to communicate with local RAG execution thread:* \n\n```\n{str(e)}\n ```"
+            self._set_ai_status("Error")
 
         # Emit signal — the handler runs on the main thread via Qt's signal-slot mechanism
         self.aiResponseReceived.emit(ai_response)
@@ -416,7 +435,9 @@ class VesselManager(QObject):
     def _on_ai_response(self, ai_response):
         """Handle the AI response on the main thread (connected via signal)."""
         self._ai_processing = False
+        self._ai_status_text = ""
         self.aiProcessingChanged.emit()
+        self.aiStatusChanged.emit()
 
         self._save_message(self._active_chat_id, "model", ai_response)
         self._active_chat_history.append({"sender": "model", "text": ai_response})
@@ -725,10 +746,12 @@ class VesselManager(QObject):
                 clean_path = clean_path.replace("/", "\\")
         source = Path(clean_path)
         if not source.exists():
+            self._notify("File not found", "error")
             return False
         try:
             dest = Path(self._current_vessel_path) / "Materials" / source.name
             shutil.copy2(source, dest)
+            self._notify(f"Uploaded {source.name}", "success")
             try:
                 updateEmbeds(str(dest.resolve()))
                 print("Vector Index: Successfully synchronized embeddings for new asset upload.")
@@ -736,7 +759,8 @@ class VesselManager(QObject):
                 print(f"Backend Error running updateEmbeds on upload: {e}")
             self.refresh_files()
             return True
-        except Exception:
+        except Exception as e:
+            self._notify(f"Upload failed: {e}", "error")
             return False
 
     @Slot()
@@ -806,6 +830,7 @@ class VesselManager(QObject):
             "created_at": _now_iso(),
         })
         self._save_events(events)
+        self._notify(f"Event added: {title}", "success")
         self.eventsChanged.emit()
 
     @Slot(int)
@@ -813,6 +838,7 @@ class VesselManager(QObject):
         events = self._load_events()
         events = [e for e in events if e.get("id") != event_id]
         self._save_events(events)
+        self._notify("Event deleted", "#ff5555")
         self.eventsChanged.emit()
 
 if __name__ == "__main__":

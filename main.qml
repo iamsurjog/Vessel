@@ -51,6 +51,77 @@ ApplicationWindow {
         }
     }
 
+    // ── Toast Notifications ──
+    property var _toastQueue: []
+
+    function showToast(msg, color) {
+        _toastQueue.push({ text: msg, color: color || "#bb86fc" })
+        if (!toastShowTimer.running && !toastHideAnim.running) {
+            _dequeueToast()
+        }
+    }
+
+    function _dequeueToast() {
+        if (_toastQueue.length === 0) return
+        var item = _toastQueue[0]
+        toastInner.color = item.color === "error" ? "#ff5555"
+                          : item.color === "success" ? "#50fa7b"
+                          : item.color
+        toastText.text = item.text
+        toastText.color = (item.color === "error" || item.color === "success" || item.color === "#50fa7b" || item.color === "#ff5555") ? "#000000" : "#ffffff"
+        toastRect.visible = true
+        toastShowAnim.start()
+        toastShowTimer.start()
+    }
+
+    Rectangle {
+        id: toastRect
+        visible: false
+        z: 9999
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 20
+        height: toastText.implicitHeight + 20
+        width: toastText.implicitWidth + 40
+        radius: 8
+
+        Rectangle {
+            id: toastInner
+            anchors.fill: parent; radius: 8; color: "#bb86fc"
+            opacity: 0
+            Behavior on opacity { NumberAnimation { duration: 250 } }
+        }
+
+        Text {
+            id: toastText
+            anchors.centerIn: parent
+            color: "#ffffff"; font.pixelSize: 12; font.bold: true
+        }
+
+        NumberAnimation {
+            id: toastShowAnim; target: toastInner; property: "opacity"; to: 1.0; duration: 250
+        }
+        NumberAnimation {
+            id: toastHideAnim; target: toastInner; property: "opacity"; to: 0.0; duration: 250
+            onStopped: {
+                toastRect.visible = false
+                _toastQueue.shift()
+                _dequeueToast()
+            }
+        }
+
+        Timer {
+            id: toastShowTimer; interval: 2500
+            onTriggered: toastHideAnim.start()
+        }
+    }
+
+    Connections {
+        target: vesselManager
+        function onNotificationEmitted(message, color) {
+            showToast(message, color)
+        }
+    }
+
     // =========================================================================
     // VIEW MODULE 1: LAUNCHER SCREEN
     // =========================================================================
@@ -639,7 +710,7 @@ ApplicationWindow {
                                             }
                                         }
 
-                                        // Loading indicator with animated dots
+                                        // Loading indicator with animated dots + status text
                                         Rectangle {
                                             visible: vesselManager.aiProcessing
                                             anchors.bottom: parent.bottom
@@ -650,14 +721,14 @@ ApplicationWindow {
 
                                             RowLayout {
                                                 id: dotRow
-                                                anchors.left: parent.left; anchors.leftMargin: 44
+                                                anchors.left: parent.left; anchors.leftMargin: 28
                                                 anchors.verticalCenter: parent.verticalCenter; spacing: 6
 
                                                 Repeater {
                                                     model: 3
                                                     Rectangle {
                                                         width: 8; height: 8; radius: 4
-                                                        color: textMuted; opacity: 0.3
+                                                        color: accentColor; opacity: 0.3
                                                         SequentialAnimation on opacity {
                                                             loops: Animation.Infinite
                                                             running: vesselManager.aiProcessing
@@ -670,6 +741,13 @@ ApplicationWindow {
                                                             }
                                                         }
                                                     }
+                                                }
+
+                                                Text {
+                                                    text: vesselManager.aiStatus
+                                                    color: textMuted; font.pixelSize: 11; font.italic: true
+                                                    visible: vesselManager.aiStatus !== ""
+                                                    leftPadding: 8
                                                 }
                                             }
                                         }
