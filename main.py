@@ -77,6 +77,7 @@ class VesselManager(QObject):
     aiProcessingChanged = Signal()
     aiResponseReceived = Signal(str)  # emitted from worker thread with final answer
     providerConfigChanged = Signal()
+    eventsChanged = Signal()
 
     def __init__(self):
         super().__init__()
@@ -754,6 +755,65 @@ class VesselManager(QObject):
         self.activeContentChanged.emit()
         self.conversationsChanged.emit()
         self.chatHistoryChanged.emit()
+
+    # ------------------------------------------------------------------
+    # Calendar — simple JSON-per-vessel event storage
+    # ------------------------------------------------------------------
+    def _events_path(self) -> Path | None:
+        if not self._current_vessel_path:
+            return None
+        p = Path(self._current_vessel_path) / ".vessel" / "events.json"
+        return p
+
+    def _load_events(self) -> list[dict]:
+        path = self._events_path()
+        if path is None or not path.exists():
+            return []
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+
+    def _save_events(self, events: list[dict]):
+        path = self._events_path()
+        if path is None:
+            return
+        path.write_text(json.dumps(events, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    @Slot(result=str)
+    def getEventsJson(self):
+        return json.dumps(self._load_events())
+
+    @Slot(result=str)
+    def getUpcomingEventsJson(self):
+        """Return events with date >= today, sorted ascending."""
+        events = self._load_events()
+        today = datetime.date.today().isoformat()
+        upcoming = [e for e in events if e.get("date", "") >= today]
+        upcoming.sort(key=lambda e: e.get("date", ""))
+        return json.dumps(upcoming)
+
+    @Slot(str, str)
+    def createCalendarEvent(self, title: str, date_str: str):
+        if not title.strip() or not date_str.strip():
+            return
+        events = self._load_events()
+        next_id = max((e.get("id", 0) for e in events), default=0) + 1
+        events.append({
+            "id": next_id,
+            "title": title.strip(),
+            "date": date_str.strip(),
+            "created_at": _now_iso(),
+        })
+        self._save_events(events)
+        self.eventsChanged.emit()
+
+    @Slot(int)
+    def deleteCalendarEvent(self, event_id: int):
+        events = self._load_events()
+        events = [e for e in events if e.get("id") != event_id]
+        self._save_events(events)
+        self.eventsChanged.emit()
 
 if __name__ == "__main__":
     app = QGuiApplication(sys.argv)

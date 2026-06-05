@@ -23,6 +23,7 @@ ApplicationWindow {
     // App state tracking parameter
     property bool renderModeActive: false
     property string renamingAbsPath: ""
+    property bool showUpcomingPanel: false
 
     background: Rectangle { color: bgDark }
 
@@ -433,7 +434,7 @@ ApplicationWindow {
                 // EDITOR CANVAS & RENDER ENGINE REGION
                 // ==========================================
                 Rectangle {
-                    width: parent.width - fileSidebar.width; height: parent.height; color: bgDark
+                    width: parent.width - fileSidebar.width - (window.showUpcomingPanel ? 220 : 0); height: parent.height; color: bgDark
 
                     ColumnLayout {
                         anchors.fill: parent; anchors.margins: 25; spacing: 15
@@ -450,6 +451,32 @@ ApplicationWindow {
                                 }
                             }
                             Item { Layout.fillWidth: true }
+
+                            Button {
+                                id: upcomingToggle
+                                text: window.showUpcomingPanel ? "📋" : "📋"; width: 34; height: 32
+                                onClicked: window.showUpcomingPanel = !window.showUpcomingPanel
+                                ToolTip.visible: hovered
+                                ToolTip.text: window.showUpcomingPanel ? "Hide Upcoming Events" : "Show Upcoming Events"
+                                ToolTip.delay: 400
+                                background: Rectangle {
+                                    color: window.showUpcomingPanel ? "#3a3a3a" : (upcomingToggle.hovered ? "#2a2a2a" : "transparent")
+                                    radius: 6; border.color: window.showUpcomingPanel ? accentColor : borderDark; border.width: 1
+                                }
+                            }
+
+                            Button {
+                                id: calendarButton
+                                text: "📅"; width: 34; height: 32
+                                onClicked: openCalendar()
+                                ToolTip.visible: hovered
+                                ToolTip.text: "Calendar"
+                                ToolTip.delay: 400
+                                background: Rectangle {
+                                    color: calendarButton.hovered ? "#2a2a2a" : "transparent"
+                                    radius: 6; border.color: borderDark; border.width: 1
+                                }
+                            }
 
                             Button {
                                 id: settingsButton
@@ -697,7 +724,89 @@ ApplicationWindow {
                         } // End Master StackLayout
                         Text { text: "Storage Location Node: " + vesselManager.currentVesselPath; color: textMuted; font.pixelSize: 10 }
                     } // End Right Panel Layout Column
-                } // End SplitView Layout Workspace Area
+                } // End SplitView Layout Workspace Area (Editor Canvas)
+
+                // ==========================================
+                // UPCOMING EVENTS / DEADLINES PANEL
+                // ==========================================
+                Rectangle {
+                    id: upcomingPanel
+                    width: 220; height: parent.height
+                    visible: window.showUpcomingPanel
+                    color: bgPanel; border.color: borderDark
+
+                    ColumnLayout {
+                        anchors.fill: parent; anchors.margins: 12; spacing: 8
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: "📅 Upcoming"; color: textMain; font.bold: true; font.pixelSize: 13 }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: "✕"; color: textMuted; font.pixelSize: 12
+                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: window.showUpcomingPanel = false }
+                            }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: borderDark }
+
+                        Text {
+                            text: "Loading..."
+                            color: textMuted; font.pixelSize: 11; font.italic: true
+                            visible: upcomingEventList.count === 0
+                        }
+
+                        ScrollView {
+                            Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+
+                            ListView {
+                                id: upcomingEventList; width: parent.width; spacing: 3
+                                model: []
+
+                                delegate: ItemDelegate {
+                                    width: parent.width; height: 50; hoverEnabled: true
+                                    background: Rectangle { color: parent.hovered ? "#222222" : "transparent"; radius: 4 }
+
+                                    ColumnLayout {
+                                        anchors.fill: parent; anchors.margins: 6; spacing: 2
+
+                                        Text {
+                                            text: modelData.title
+                                            color: {
+                                                // Tomorrow → red
+                                                var tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+                                                var y = tomorrow.getFullYear(), m = ("0"+(tomorrow.getMonth()+1)).slice(-2), d = ("0"+tomorrow.getDate()).slice(-2)
+                                                var tomorrowStr = y + "-" + m + "-" + d
+                                                modelData.date === tomorrowStr ? "#ff5555" : textMain
+                                            }
+                                            font.pixelSize: 12; font.bold: true
+                                            elide: Text.ElideRight; Layout.fillWidth: true
+                                        }
+                                        Text {
+                                            text: modelData.date
+                                            color: textMuted; font.pixelSize: 10
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Reload when shown or when events change
+                    function reload() {
+                        var data = vesselManager.getUpcomingEventsJson()
+                        upcomingEventList.model = JSON.parse(data || "[]")
+                    }
+
+                    onVisibleChanged: { if (visible) reload() }
+                }
+
+                Connections {
+                    target: vesselManager
+                    function onEventsChanged() {
+                        if (upcomingPanel.visible) upcomingPanel.reload()
+                    }
+                }
             } // End WorkspaceView Root Item Component
         } // End WorkspaceComponent Declared ID
     } // End Launcher Screen Component
@@ -793,6 +902,266 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    // =========================================================================
+    // CALENDAR POPUP — month grid with event management
+    // =========================================================================
+    Popup {
+        id: calendarPopup
+        anchors.centerIn: parent
+        width: 540; height: 580; modal: true; focus: true
+        closePolicy: Popup.CloseOnEscape
+
+        readonly property var today: new Date()
+        property var displayMonth: new Date()
+        property var selectedDate: new Date()
+        property var allEvents: []
+
+        function fmtDate(d) {
+            var y = d.getFullYear()
+            var m = ("0" + (d.getMonth()+1)).slice(-2)
+            var day = ("0" + d.getDate()).slice(-2)
+            return y + "-" + m + "-" + day
+        }
+        function monthLabel(d) {
+            var names = ["January","February","March","April","May","June","July","August","September","October","November","December"]
+            return names[d.getMonth()] + " " + d.getFullYear()
+        }
+        function daysInMonth(d) { return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate() }
+        function startDow(d)  { return new Date(d.getFullYear(), d.getMonth(), 1).getDay() }
+
+        property var dayCells: []
+        function buildGrid() {
+            var cells = []
+            var y = displayMonth.getFullYear(), m = displayMonth.getMonth()
+            var dim = daysInMonth(displayMonth), sd = startDow(displayMonth)
+            var todayStr = fmtDate(new Date()), selStr = fmtDate(selectedDate)
+            for (var i = 0; i < 42; i++) {
+                var dn = i - sd + 1, valid = dn >= 1 && dn <= dim, dStr = ""
+                if (valid) { var dt = new Date(y, m, dn); dStr = fmtDate(dt) }
+                var ev = valid ? allEvents.filter(function(e){ return e.date === dStr }) : []
+                cells.push({ dayNum: dn, valid: valid, dateStr: dStr,
+                    isToday: dStr === todayStr, isSelected: dStr === selStr,
+                    hasEvent: ev.length > 0 })
+            }
+            dayCells = cells
+        }
+
+        property var eventsForDate: []
+        function updateEventsForDate() {
+            var sel = fmtDate(selectedDate)
+            eventsForDate = allEvents.filter(function(e){ return e.date === sel })
+        }
+
+        function loadEvents() {
+            var data = vesselManager.getEventsJson()
+            allEvents = JSON.parse(data || "[]")
+            buildGrid(); updateEventsForDate()
+        }
+
+        function selectDate(year, month, day) {
+            selectedDate = new Date(year, month, day)
+            buildGrid(); updateEventsForDate()
+        }
+        function prevMonth() {
+            displayMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth()-1, 1)
+            buildGrid()
+        }
+        function nextMonth() {
+            displayMonth = new Date(displayMonth.getFullYear(), displayMonth.getMonth()+1, 1)
+            buildGrid()
+        }
+        function goToday() {
+            displayMonth = new Date(); selectedDate = new Date()
+            buildGrid(); updateEventsForDate()
+        }
+
+        onOpened: loadEvents()
+
+        background: Rectangle { color: bgCard; border.color: borderDark; radius: 8 }
+
+        ColumnLayout {
+            anchors.fill: parent; anchors.margins: 20; spacing: 10
+
+            // Header
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "📅 Calendar"; color: textMain; font.bold: true; font.pixelSize: 16 }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "Today"
+                    onClicked: calendarPopup.goToday()
+                    ToolTip.visible: hovered; ToolTip.text: "Jump to today"
+                    background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 6; border.color: borderDark; border.width: 1; implicitHeight: 26 }
+                    contentItem: Text { text: "Today"; color: accentColor; font.pixelSize: 11; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; leftPadding: 8; rightPadding: 8 }
+                }
+                Button {
+                    text: "✕"; onClicked: calendarPopup.close()
+                    background: Rectangle { color: "transparent"; implicitWidth: 28; implicitHeight: 28 }
+                    contentItem: Text { text: "✕"; color: textMuted; font.pixelSize: 14 }
+                }
+            }
+
+            // Add event form
+            RowLayout {
+                Layout.fillWidth: true; spacing: 6
+                TextField {
+                    id: calEventTitle
+                    Layout.fillWidth: true
+                    placeholderText: "Event title..."
+                    color: textMain; font.pixelSize: 12
+                    background: Rectangle { color: bgDark; border.color: borderDark; radius: 4; implicitHeight: 28 }
+                }
+                TextField {
+                    id: calEventDate
+                    width: 110
+                    text: calendarPopup.fmtDate(calendarPopup.selectedDate)
+                    color: textMain; font.pixelSize: 12
+                    background: Rectangle { color: bgDark; border.color: borderDark; radius: 4; implicitHeight: 28 }
+                }
+                Button {
+                    text: "+"
+                    onClicked: {
+                        if (calEventTitle.text.trim() && calEventDate.text.trim()) {
+                            vesselManager.createCalendarEvent(calEventTitle.text, calEventDate.text)
+                            calEventTitle.text = ""
+                            calendarPopup.loadEvents()
+                        }
+                    }
+                    ToolTip.visible: hovered; ToolTip.text: "Add event"
+                    background: Rectangle { color: accentColor; radius: 6; implicitWidth: 30; implicitHeight: 28 }
+                    contentItem: Text { text: "+"; color: "#000"; font.bold: true; font.pixelSize: 14; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                }
+            }
+
+            // Month navigation
+            RowLayout {
+                Layout.fillWidth: true; Layout.topMargin: 4
+                Button {
+                    text: "◀"; onClicked: calendarPopup.prevMonth()
+                    background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 4; implicitWidth: 28; implicitHeight: 26 }
+                    contentItem: Text { text: "◀"; color: accentColor; font.pixelSize: 12 }
+                }
+                Item { Layout.fillWidth: true }
+                Text { text: calendarPopup.monthLabel(calendarPopup.displayMonth); color: textMain; font.bold: true; font.pixelSize: 15 }
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "▶"; onClicked: calendarPopup.nextMonth()
+                    background: Rectangle { color: parent.hovered ? "#3a3a3a" : "transparent"; radius: 4; implicitWidth: 28; implicitHeight: 26 }
+                    contentItem: Text { text: "▶"; color: accentColor; font.pixelSize: 12 }
+                }
+            }
+
+            // Day-of-week headers
+            GridLayout {
+                Layout.fillWidth: true; columns: 7; columnSpacing: 2; rowSpacing: 2
+                Repeater {
+                    model: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]
+                    delegate: Text {
+                        text: modelData; color: textMuted; font.pixelSize: 10; font.bold: true
+                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                        Layout.fillWidth: true; Layout.preferredHeight: 22
+                    }
+                }
+            }
+
+            // Day grid (42 cells)
+            GridLayout {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                columns: 7; columnSpacing: 2; rowSpacing: 2
+
+                Repeater {
+                    model: calendarPopup.dayCells
+
+                    delegate: Rectangle {
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        Layout.preferredHeight: 40
+                        visible: modelData.valid
+                        radius: 6
+                        color: modelData.isSelected ? accentColor
+                             : modelData.isToday ? "#3a3a3a"
+                             : "transparent"
+                        border.color: modelData.isToday && !modelData.isSelected ? accentColor : "transparent"
+                        border.width: modelData.isToday && !modelData.isSelected ? 1 : 0
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: calendarPopup.selectDate(calendarPopup.displayMonth.getFullYear(), calendarPopup.displayMonth.getMonth(), modelData.dayNum)
+                            cursorShape: Qt.PointingHandCursor
+                        }
+
+                        ColumnLayout {
+                            anchors.fill: parent; spacing: 2
+                            Text {
+                                text: modelData.dayNum
+                                color: modelData.isSelected ? "#000" : textMain
+                                font.pixelSize: 12; font.bold: modelData.isToday
+                                horizontalAlignment: Text.AlignHCenter
+                                Layout.fillWidth: true; Layout.topMargin: 3
+                            }
+                            Rectangle {
+                                width: 4; height: 4; radius: 2; color: accentColor
+                                visible: modelData.hasEvent
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+                            Item { Layout.fillHeight: true }
+                        }
+                    }
+                }
+            }
+
+            // Events for selected date
+            Rectangle { Layout.fillWidth: true; height: 1; color: borderDark }
+
+            Text {
+                text: "Events on " + calendarPopup.fmtDate(calendarPopup.selectedDate)
+                color: textMuted; font.bold: true; font.pixelSize: 11
+            }
+
+            ScrollView {
+                Layout.fillWidth: true; Layout.preferredHeight: 80; clip: true
+
+                ListView {
+                    id: calEventList; width: parent.width; spacing: 4
+                    model: calendarPopup.eventsForDate
+
+                    Text {
+                        text: "No events on this date"
+                        color: textMuted; font.pixelSize: 11; font.italic: true
+                        visible: parent.count === 0; anchors.centerIn: parent
+                    }
+
+                    delegate: ItemDelegate {
+                        width: parent.width; height: 34; hoverEnabled: true
+                        background: Rectangle { color: parent.hovered ? "#2a2a2a" : "transparent"; radius: 4 }
+                        RowLayout {
+                            anchors.fill: parent; anchors.margins: 4; spacing: 8
+                            Rectangle { width: 3; height: 20; radius: 2; color: accentColor }
+                            Text {
+                                text: modelData.title
+                                color: textMain; font.pixelSize: 11
+                                elide: Text.ElideRight; Layout.fillWidth: true
+                            }
+                            Button {
+                                text: "✕"; width: 18; height: 18
+                                onClicked: {
+                                    vesselManager.deleteCalendarEvent(modelData.id)
+                                    calendarPopup.loadEvents()
+                                }
+                                background: Rectangle { color: "transparent"; radius: 2 }
+                                contentItem: Text { text: "✕"; color: textMuted; font.pixelSize: 8 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function openCalendar() {
+        calendarPopup.loadEvents()
+        calendarPopup.open()
     }
 
     // =========================================================================
