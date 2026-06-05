@@ -1028,8 +1028,18 @@ workflow.add_conditional_edges(
     },
 )
 
-# 6. Answer → end (quality loop disabled for tinyllama — small models
-#    cannot reliably grade or refine, and the extra calls worsen output)
-workflow.add_edge("generate_answer_node", END)
+# 6. Answer → quality check → (refinement loop | end)
+workflow.add_edge("generate_answer_node", "quality_check_node")
+
+workflow.add_conditional_edges(
+    "quality_check_node",
+    quality_router,
+    {
+        "route_to_end": END,
+        "route_to_refine": "refine_answer_node",
+    },
+)
+
+workflow.add_edge("refine_answer_node", "quality_check_node")
 
 app = workflow.compile()
