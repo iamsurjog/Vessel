@@ -1,5 +1,5 @@
 # Maintainer: Sujatro Ganguli <iamsurjog@gmail.com>
-pkgname=Vessel
+pkgname=vessel_app
 pkgver=0.0.0
 pkgrel=1
 pkgdesc="A local-first desktop knowledge workspace with AI-powered RAG. Everything runs on your machine — no cloud, no telemetry, no accounts. Write notes, store materials, and ask questions entirely offline. "
