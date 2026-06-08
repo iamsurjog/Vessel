@@ -1,0 +1,15 @@
+pkgbase = Vessel
+	pkgdesc = A local-first desktop knowledge workspace with AI-powered RAG. Everything runs on your machine — no cloud, no telemetry, no accounts. Write notes, store materials, and ask questions entirely offline.
+	pkgver = 0.0.0
+	pkgrel = 1
+	url = https://github.com/iamsurjog/Vessel
+	arch = any
+	license = MIT
+	makedepends = python
+	optdepends = tesseract
+	optdepends = ffmpeg
+	optdepends = ollama
+	source = git+https://github.com/iamsurjog/Vessel.git
+	sha256sums = SKIP
+
+pkgname = Vessel
