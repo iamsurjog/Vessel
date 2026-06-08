@@ -1,6 +1,9 @@
 import json
 import operator
+import os as _os
+import random as _random
 import sys as _sys
+import time as _time
 from pathlib import Path
 from typing import Annotated, List, TypedDict
 from langgraph.graph import START, END, StateGraph
@@ -8,6 +11,35 @@ import sqlite3
 import sqlite_vec
 
 from modules import bm25_search, get_all_documents, tag_search
+
+
+# ==========================================
+# Verbose logging — VESSEL_LOG_LEVEL env var
+#   0 = quiet (default)
+#   1 = general — API errors, status codes, key missing
+#   2 = highly specific — request/response bodies, timing
+# ==========================================
+_LOG_LEVEL = int(_os.environ.get("VESSEL_LOG_LEVEL", "0"))
+
+
+def _log(level: int, *args, **kwargs):
+    if _LOG_LEVEL >= level:
+        print(*args, **kwargs)
+
+
+# ==========================================
+# Adaptive backoff for HTTP 429 rate limits
+# ==========================================
+_429_MAX_RETRIES = 5
+_429_BASE_DELAY = 3.0
+
+
+def _should_retry_429(status_code: int) -> bool:
+    return status_code == 429
+
+
+def _retry_delay(attempt: int) -> float:
+    return (_429_BASE_DELAY * (2 ** attempt)) + _random.uniform(0.5, 1.5)
 
 
 # ==========================================
@@ -68,13 +100,19 @@ def _ollama_chat(
         if not any(m.get("role") == "system" for m in messages):
             messages = [{"role": "system", "content": _OLLAMA_SYSTEM}] + messages
 
+        _log(2, f"  [Ollama] POST chat  model={model}  messages={len(messages)}")
+
+        t0 = _time.time()
         with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
             with client.stream(
                 "POST",
                 f"{_OLLAMA_BASE}/api/chat",
                 json={"model": model, "messages": messages, "stream": True},
             ) as resp:
+                elapsed = _time.time() - t0
+                _log(2, f"  [Ollama] Response in {elapsed:.1f}s  HTTP {resp.status_code}")
                 if resp.status_code != 200:
+                    _log(1, f"  [Ollama] HTTP {resp.status_code}")
                     return None
                 content_parts: list[str] = []
                 thinking_parts: list[str] = []
@@ -102,10 +140,11 @@ def _ollama_chat(
         full = "".join(content_parts).strip()
         if not full:
             full = "".join(thinking_parts).strip()
+        _log(2, f"  [Ollama] Response length={len(full) if full else 0} chars")
         return full or None
-    except Exception:
-        pass
-    return None
+    except Exception as e:
+        _log(1, f"  [Ollama] Exception: {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -118,8 +157,8 @@ def _openai_chat(
     model: str = "gpt-4o-mini",
     timeout: int = 120,
 ) -> str | None:
-    """Call OpenAI chat API."""
     if not api_key:
+        _log(1, "  [OpenAI] No API key provided.")
         return None
     try:
         import httpx, json
@@ -128,21 +167,50 @@ def _openai_chat(
             "messages": messages,
             "temperature": 0.7,
         }
-        resp = httpx.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=body,
-            timeout=timeout,
-        )
-        if resp.status_code != 200:
+
+        for attempt in range(_429_MAX_RETRIES):
+            _log(2, f"  [OpenAI] POST chat/completions  model={model}  messages={len(messages)}")
+            t0 = _time.time()
+            resp = httpx.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+                timeout=timeout,
+            )
+            elapsed = _time.time() - t0
+            _log(2, f"  [OpenAI] Response in {elapsed:.1f}s  HTTP {resp.status_code}")
+
+            if resp.status_code == 200:
+                data = resp.json()
+                _log(2, f"  [OpenAI] Response: {json.dumps(data)[:2000]}")
+                choice = data.get("choices", [{}])[0]
+                result = (choice.get("message") or {}).get("content", "").strip() or None
+                if result is None and _LOG_LEVEL >= 1:
+                    finish = choice.get("finish_reason", "?")
+                    _log(1, f"  [OpenAI] Empty content — finish_reason={finish}")
+                usage = data.get("usage", {})
+                if usage:
+                    _log(2, f"  [OpenAI] Tokens: {usage.get('prompt_tokens', '?')} in, "
+                             f"{usage.get('completion_tokens', '?')} out")
+                return result
+
+            if _should_retry_429(resp.status_code):
+                if attempt == _429_MAX_RETRIES - 1:
+                    _log(1, f"  [OpenAI] HTTP 429 — max retries reached, giving up.")
+                    return None
+                delay = _retry_delay(attempt)
+                _log(1, f"  [OpenAI] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{_429_MAX_RETRIES})")
+                _time.sleep(delay)
+                continue
+
+            _log(1, f"  [OpenAI] HTTP {resp.status_code} — {resp.text[:1000]}")
             return None
-        data = resp.json()
-        choice = data.get("choices", [{}])[0]
-        return (choice.get("message") or {}).get("content", "").strip() or None
-    except Exception:
+
+    except Exception as e:
+        _log(1, f"  [OpenAI] Exception: {e}")
         return None
 
 
@@ -152,17 +220,12 @@ def _anthropic_chat(
     model: str = "claude-3-haiku-20240307",
     timeout: int = 120,
 ) -> str | None:
-    """Call Anthropic chat API.
-
-    Anthropic uses a separate ``system`` field for system messages
-    and a different message format for the conversation.
-    """
     if not api_key:
+        _log(1, "  [Anthropic] No API key provided.")
         return None
     try:
         import httpx, json
 
-        # Extract system message (if present) — Anthropic uses a top-level field
         system_prompt = ""
         filtered_messages: list[dict] = []
         for m in messages:
@@ -179,43 +242,66 @@ def _anthropic_chat(
         if system_prompt:
             body["system"] = system_prompt
 
-        resp = httpx.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            },
-            json=body,
-            timeout=timeout,
-        )
-        if resp.status_code != 200:
+        for attempt in range(_429_MAX_RETRIES):
+            _log(2, f"  [Anthropic] POST messages  model={model}  messages={len(filtered_messages)}")
+            t0 = _time.time()
+            resp = httpx.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+                timeout=timeout,
+            )
+            elapsed = _time.time() - t0
+            _log(2, f"  [Anthropic] Response in {elapsed:.1f}s  HTTP {resp.status_code}")
+
+            if resp.status_code == 200:
+                data = resp.json()
+                _log(2, f"  [Anthropic] Response: {json.dumps(data)[:2000]}")
+                content_blocks = data.get("content", [])
+                texts = [b.get("text", "") for b in content_blocks if b.get("type") == "text"]
+                result = "".join(texts).strip() or None
+                if result is None:
+                    stop_reason = data.get("stop_reason", "?")
+                    _log(1, f"  [Anthropic] Empty content — stop_reason={stop_reason}")
+                usage = data.get("usage", {})
+                if usage:
+                    _log(2, f"  [Anthropic] Tokens: {usage.get('input_tokens', '?')} in, "
+                             f"{usage.get('output_tokens', '?')} out")
+                return result
+
+            if _should_retry_429(resp.status_code):
+                if attempt == _429_MAX_RETRIES - 1:
+                    _log(1, f"  [Anthropic] HTTP 429 — max retries reached, giving up.")
+                    return None
+                delay = _retry_delay(attempt)
+                _log(1, f"  [Anthropic] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{_429_MAX_RETRIES})")
+                _time.sleep(delay)
+                continue
+
+            _log(1, f"  [Anthropic] HTTP {resp.status_code} — {resp.text[:1000]}")
             return None
-        data = resp.json()
-        content_blocks = data.get("content", [])
-        texts = [b.get("text", "") for b in content_blocks if b.get("type") == "text"]
-        return "".join(texts).strip() or None
-    except Exception:
+
+    except Exception as e:
+        _log(1, f"  [Anthropic] Exception: {e}")
         return None
 
 
 def _gemini_chat(
     messages: list[dict],
     api_key: str,
-    model: str = "gemini-2.0-flash",
+    model: str = "gemini-2.5-flash",
     timeout: int = 120,
 ) -> str | None:
-    """Call Google Gemini chat API.
-
-    Gemini uses ``contents[{role, parts}]`` format.
-    System instructions go in a separate top-level field.
-    """
     if not api_key:
+        _log(1, "  [Gemini] No API key provided — skipping request.")
         return None
     try:
         import httpx, json
 
-        # Separate system instruction from conversation
         system_instruction = ""
         contents: list[dict] = []
         for m in messages:
@@ -236,22 +322,55 @@ def _gemini_chat(
         if system_instruction:
             body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
 
-        resp = httpx.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-            params={"key": api_key},
-            json=body,
-            timeout=timeout,
-        )
-        if resp.status_code != 200:
+        for attempt in range(_429_MAX_RETRIES):
+            _log(2, f"  [Gemini] POST {model}:generateContent  body={json.dumps(body)[:2000]}")
+            t0 = _time.time()
+            resp = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                params={"key": api_key},
+                json=body,
+                timeout=timeout,
+            )
+            elapsed = _time.time() - t0
+            _log(2, f"  [Gemini] Response in {elapsed:.1f}s  HTTP {resp.status_code}")
+
+            if resp.status_code == 200:
+                data = resp.json()
+                _log(2, f"  [Gemini] Response body: {json.dumps(data)[:2000]}")
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    block_reason = (
+                        data.get("promptFeedback", {})
+                        .get("blockReason", "UNKNOWN")
+                    )
+                    _log(1, f"  [Gemini] Response blocked — reason: {block_reason}")
+                    return None
+                parts = (candidates[0].get("content") or {}).get("parts", [])
+                texts = [p.get("text", "") for p in parts]
+                result = "".join(texts).strip() or None
+                if result is None:
+                    finish_reason = candidates[0].get("finishReason", "UNKNOWN")
+                    _log(1, f"  [Gemini] Empty response — finishReason: {finish_reason}")
+                usage = data.get("usageMetadata", {})
+                if usage:
+                    _log(2, f"  [Gemini] Tokens: {usage.get('promptTokenCount', '?')} in, "
+                             f"{usage.get('candidatesTokenCount', '?')} out")
+                return result
+
+            if _should_retry_429(resp.status_code):
+                if attempt == _429_MAX_RETRIES - 1:
+                    _log(1, f"  [Gemini] HTTP 429 — max retries reached, giving up.")
+                    return None
+                delay = _retry_delay(attempt)
+                _log(1, f"  [Gemini] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{_429_MAX_RETRIES})")
+                _time.sleep(delay)
+                continue
+
+            _log(1, f"  [Gemini] HTTP {resp.status_code} — {resp.text[:1000]}")
             return None
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return None
-        parts = (candidates[0].get("content") or {}).get("parts", [])
-        texts = [p.get("text", "") for p in parts]
-        return "".join(texts).strip() or None
-    except Exception:
+
+    except Exception as e:
+        _log(1, f"  [Gemini] Exception: {e}")
         return None
 
 
@@ -281,10 +400,12 @@ def _llm_chat(
             timeout=timeout,
         )
     if provider == "google":
+        # Prefer config key, fall back to GEMINI_API_KEY env var (same as genai.Client())
+        api_key = provider_config.get("google_api_key", "") or _os.environ.get("GEMINI_API_KEY", "")
         return _gemini_chat(
             messages,
-            api_key=provider_config.get("google_api_key", ""),
-            model=provider_config.get("google_model", "gemini-2.0-flash"),
+            api_key=api_key,
+            model=provider_config.get("google_model", "gemini-2.5-flash"),
             timeout=timeout,
         )
 

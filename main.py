@@ -71,7 +71,7 @@ def _default_provider_config() -> dict:
         "anthropic_api_key": "",
         "anthropic_model": "claude-3-haiku-20240307",
         "google_api_key": "",
-        "google_model": "gemini-2.0-flash",
+        "google_model": "gemini-2.5-flash",
     }
 
 
@@ -327,6 +327,18 @@ class VesselManager(QObject):
     def googleApiKey(self):
         return self._provider_config.get("google_api_key", "")
 
+    @Property(str, notify=providerConfigChanged)
+    def googleModel(self):
+        return self._provider_config.get("google_model", "gemini-2.5-flash")
+
+    @Property(str, notify=providerConfigChanged)
+    def openaiModel(self):
+        return self._provider_config.get("openai_model", "gpt-4o-mini")
+
+    @Property(str, notify=providerConfigChanged)
+    def anthropicModel(self):
+        return self._provider_config.get("anthropic_model", "claude-3-haiku-20240307")
+
     @Slot(str)
     def setProviderName(self, name):
         if self._provider_config.get("provider") != name:
@@ -358,6 +370,27 @@ class VesselManager(QObject):
         self._provider_config["google_api_key"] = key
         _save_provider_config(self._provider_config)
         self.providerConfigChanged.emit()
+
+    @Slot(str)
+    def setGoogleModel(self, model):
+        if self._provider_config.get("google_model") != model:
+            self._provider_config["google_model"] = model
+            _save_provider_config(self._provider_config)
+            self.providerConfigChanged.emit()
+
+    @Slot(str)
+    def setOpenaiModel(self, model):
+        if self._provider_config.get("openai_model") != model:
+            self._provider_config["openai_model"] = model
+            _save_provider_config(self._provider_config)
+            self.providerConfigChanged.emit()
+
+    @Slot(str)
+    def setAnthropicModel(self, model):
+        if self._provider_config.get("anthropic_model") != model:
+            self._provider_config["anthropic_model"] = model
+            _save_provider_config(self._provider_config)
+            self.providerConfigChanged.emit()
 
     # ------------------------------------------------------------------
     # Theme configuration properties
@@ -447,6 +480,22 @@ class VesselManager(QObject):
         self._active_chat_id = chat_id
         self._active_chat_history = self._load_chat_history(chat_id)
         self.chatHistoryChanged.emit()
+
+    @Slot(str)
+    def deleteConversation(self, chat_id):
+        path = self._conv_path(chat_id)
+        if path is not None and path.exists():
+            try:
+                path.unlink()
+            except Exception:
+                pass
+        self._conversations = [c for c in self._conversations if c.get("id") != chat_id]
+        self.conversationsChanged.emit()
+        if self._active_chat_id == chat_id:
+            if self._conversations:
+                self.selectConversation(self._conversations[0]["id"])
+            else:
+                self.newConversation()
 
     @Slot(str, bool)
     def submitUserMessage(self, message, web_search_enabled=False):

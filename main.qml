@@ -376,8 +376,27 @@ ApplicationWindow {
                                             delegate: ItemDelegate {
                                                 width: recentChatsList.width; height: 28
                                                 background: Rectangle { color: (vesselManager.activeChatId === modelData.id) ? activeBg : (hovered ? hoverBg : "transparent"); radius: 4 }
-                                                contentItem: Text { text: modelData.title; color: textMain; font.pixelSize: 12; elide: Text.ElideRight }
                                                 onClicked: vesselManager.selectConversation(modelData.id)
+                                                contentItem: RowLayout {
+                                                    spacing: 4
+                                                    Text {
+                                                        text: modelData.title; color: textMain; font.pixelSize: 12
+                                                        elide: Text.ElideRight; Layout.fillWidth: true
+                                                    }
+                                                    Button {
+                                                        text: "×"; implicitWidth: 20; implicitHeight: 20
+                                                        Layout.alignment: Qt.AlignVCenter
+                                                        onClicked: vesselManager.deleteConversation(modelData.id)
+                                                        background: Rectangle {
+                                                            color: parent.hovered ? "#ff5555" : "transparent"; radius: 3
+                                                        }
+                                                        contentItem: Text {
+                                                            text: "×"; color: parent.hovered ? "#ffffff" : textMuted
+                                                            font.pixelSize: 13; horizontalAlignment: Text.AlignHCenter
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1280,8 +1299,11 @@ onClicked: {
             }
             ollamaModelField.text = vesselManager.ollamaModel
             geminiKeyField.text = vesselManager.googleApiKey
+            googleModelField.text = vesselManager.googleModel
             chatgptKeyField.text = vesselManager.openaiApiKey
+            openaiModelField.text = vesselManager.openaiModel
             claudeKeyField.text = vesselManager.anthropicApiKey
+            anthropicModelField.text = vesselManager.anthropicModel
         }
 
         function syncThemeFields() {
@@ -1301,8 +1323,11 @@ onClicked: {
             vesselManager.setProviderName(provider)
             vesselManager.setOllamaModel(ollamaModelField.text.trim() || "tinyllama:1.1b")
             vesselManager.setGoogleApiKey(geminiKeyField.text)
+            vesselManager.setGoogleModel(googleModelField.text.trim() || "gemini-2.5-flash")
             vesselManager.setOpenaiApiKey(chatgptKeyField.text)
+            vesselManager.setOpenaiModel(openaiModelField.text.trim() || "gpt-4o-mini")
             vesselManager.setAnthropicApiKey(claudeKeyField.text)
+            vesselManager.setAnthropicModel(anthropicModelField.text.trim() || "claude-3-haiku-20240307")
             settingsPopup.close()
         }
 
@@ -1383,6 +1408,18 @@ onClicked: {
                         background: Rectangle { color: toggleGeminiBtn.hovered ? activeBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
                     }
                 }
+                // ── Gemini: model name ──
+                Column { width: parent.width; spacing: 6
+                    Text { text: "Model Name"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                    TextField {
+                        id: googleModelField
+                        width: parent.width; height: 36
+                        placeholderText: "gemini-2.5-flash"
+                        color: textMain; font.pixelSize: 13
+                        leftPadding: 10
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                    }
+                }
             }
 
             // ── ChatGPT: API key ──
@@ -1407,6 +1444,18 @@ onClicked: {
                         background: Rectangle { color: toggleGptBtn.hovered ? activeBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
                     }
                 }
+                // ── ChatGPT: model name ──
+                Column { width: parent.width; spacing: 6
+                    Text { text: "Model Name"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                    TextField {
+                        id: openaiModelField
+                        width: parent.width; height: 36
+                        placeholderText: "gpt-4o-mini"
+                        color: textMain; font.pixelSize: 13
+                        leftPadding: 10
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                    }
+                }
             }
 
             // ── Claude: API key ──
@@ -1429,6 +1478,18 @@ onClicked: {
                         onClicked: claudeKeyField.echoMode = claudeKeyField.echoMode === TextInput.Password ? TextInput.Normal : TextInput.Password
                         contentItem: Text { text: parent.text; color: textMain; font.pixelSize: parent.font.pixelSize; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                         background: Rectangle { color: toggleClaudeBtn.hovered ? activeBg : "transparent"; radius: 6; border.color: borderDark; border.width: 1 }
+                    }
+                }
+                // ── Claude: model name ──
+                Column { width: parent.width; spacing: 6
+                    Text { text: "Model Name"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                    TextField {
+                        id: anthropicModelField
+                        width: parent.width; height: 36
+                        placeholderText: "claude-3-haiku-20240307"
+                        color: textMain; font.pixelSize: 13
+                        leftPadding: 10
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
                     }
                 }
             }

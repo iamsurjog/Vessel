@@ -1,8 +1,17 @@
 import asyncio
+import os as _os
 from pathlib import Path
 from typing import Optional
 import sqlite3
 import sqlite_vec
+
+# Verbose logging — same scheme as modules/query
+_LOG_LEVEL = int(_os.environ.get("VESSEL_LOG_LEVEL", "0"))
+
+
+def _log(level: int, *args, **kwargs):
+    if _LOG_LEVEL >= level:
+        print(*args, **kwargs)
 
 
 def _open_db(db_path: Path) -> sqlite3.Connection:
@@ -64,12 +73,12 @@ def updateEmbeds(file_path: str) -> bool:
         )
 
         for log in result.get("db_logs", []):
-            print(f"  {log}")
+            _log(2, f"  {log}")
 
         return True
 
     except Exception as e:
-        print(f"❌ updateEmbeds failed for '{file_path}': {e}")
+        _log(1, f"❌ updateEmbeds failed for '{file_path}': {e}")
         return False
 
 
@@ -129,7 +138,7 @@ def bm25_search(db_path: Path, query: str, top_k: int = 10) -> list[dict]:
         ]
 
     except Exception as e:
-        print(f"❌ BM25 search error: {e}")
+        _log(1, f"❌ BM25 search error: {e}")
         return []
 
 
@@ -166,7 +175,7 @@ def tag_search(db_path: Path, tag_names: list[str]) -> list[dict]:
         ]
 
     except Exception as e:
-        print(f"❌ Tag search error: {e}")
+        _log(1, f"❌ Tag search error: {e}")
         return []
 
 
@@ -184,7 +193,7 @@ def get_all_documents(db_path: Path) -> list[dict]:
             for r in rows
         ]
     except Exception as e:
-        print(f"❌ get_all_documents error: {e}")
+        _log(1, f"❌ get_all_documents error: {e}")
         return []
 
 
@@ -383,5 +392,5 @@ def initVessel(path: Path) -> bool:
         return True
 
     except sqlite3.Error as e:
-        print(f"❌ Database Initialization failed: {e}")
+        _log(1, f"❌ Database Initialization failed: {e}")
         return False
