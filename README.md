@@ -42,7 +42,6 @@ Built with **PySide6 (Qt6)** and **QML** for the interface, **LangGraph** for th
 - **File tree browser** — navigate your droplet directory structure with folder nesting, create new files/folders, rename, and delete.
 - **Auto-save** — unsaved changes are persisted to disk on window close via a guaranteed shutdown handler.
 - **Multi-format** — supports `.md`, `.html`, and `.txt` files within the Droplets directory.
-- **Welcome note** — auto-created when you create a new vessel.
 
 ### Materials (File Vault)
 - **Drag-and-drop file upload** — copy files into the vessel's `Materials/` directory with a single click. Files are automatically indexed for search.
@@ -125,13 +124,17 @@ When a file is uploaded to Materials, a **LangGraph pipeline** processes it auto
 
 ## Installing
 
+> [!IMPORTANT]
+> For pure local experience, ollama is required and it needs to run ollama serve in the background. Install ollama from here: [Ollama Install](https://ollama.com/)
+
 ### Pre-built Binaries
 
 Pre-built binaries are available on the [Releases](https://github.com/iamsurjog/Vessel/releases) page. Download the archive for your platform, extract it, and run the executable.
 
-### Build from Source
+### Run from Source
 
 **Prerequisites:** Python 3.14.5 (nearby versions 3.12–3.13 may work but are untested). Optional dependencies for full file format support: LibreOffice, poppler-utils, Tesseract OCR, ffmpeg.
+
 
 ```bash
 # Clone the repo
@@ -150,9 +153,21 @@ pip install -r requirements.txt
 python main.py
 ```
 
-> **Note:** Development targets Python 3.14.5. Nearby versions (3.12, 3.13) may work, but have not been tested.
+> [!note] Python version
+> Targets Python 3.14.5. Nearby versions (3.12, 3.13) may work, but have not been tested.
 
----
+You can use pyinstaller to build binaries for your system. Command for using pyinstaller:
+For linux:
+```bash
+pyinstaller --onefile --windowed --add-data "main.qml:." main.py
+```
+For windows:
+
+```powershell
+pyinstaller --onefile --windowed --add-data "main.qml;." main.py
+```
+
+Make sure the main.qml file is added
 
 ## Usage
 
@@ -328,8 +343,3 @@ VESSEL_LOG_LEVEL=2 python main.py
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
 
----
-
-## License
-
-This project is licensed under the terms included in the repository.
