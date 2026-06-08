@@ -30,7 +30,6 @@ def _log(level: int, *args, **kwargs):
 # ==========================================
 # Adaptive backoff for HTTP 429 rate limits
 # ==========================================
-_429_MAX_RETRIES = 5
 _429_BASE_DELAY = 3.0
 
 
@@ -156,6 +155,7 @@ def _openai_chat(
     api_key: str,
     model: str = "gpt-4o-mini",
     timeout: int = 120,
+    max_retries: int = 5,
 ) -> str | None:
     if not api_key:
         _log(1, "  [OpenAI] No API key provided.")
@@ -168,7 +168,7 @@ def _openai_chat(
             "temperature": 0.7,
         }
 
-        for attempt in range(_429_MAX_RETRIES):
+        for attempt in range(max_retries):
             _log(2, f"  [OpenAI] POST chat/completions  model={model}  messages={len(messages)}")
             t0 = _time.time()
             resp = httpx.post(
@@ -198,11 +198,11 @@ def _openai_chat(
                 return result
 
             if _should_retry_429(resp.status_code):
-                if attempt == _429_MAX_RETRIES - 1:
+                if attempt == max_retries - 1:
                     _log(1, f"  [OpenAI] HTTP 429 — max retries reached, giving up.")
                     return None
                 delay = _retry_delay(attempt)
-                _log(1, f"  [OpenAI] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{_429_MAX_RETRIES})")
+                _log(1, f"  [OpenAI] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{max_retries})")
                 _time.sleep(delay)
                 continue
 
@@ -219,6 +219,7 @@ def _anthropic_chat(
     api_key: str,
     model: str = "claude-3-haiku-20240307",
     timeout: int = 120,
+    max_retries: int = 5,
 ) -> str | None:
     if not api_key:
         _log(1, "  [Anthropic] No API key provided.")
@@ -242,7 +243,7 @@ def _anthropic_chat(
         if system_prompt:
             body["system"] = system_prompt
 
-        for attempt in range(_429_MAX_RETRIES):
+        for attempt in range(max_retries):
             _log(2, f"  [Anthropic] POST messages  model={model}  messages={len(filtered_messages)}")
             t0 = _time.time()
             resp = httpx.post(
@@ -274,11 +275,11 @@ def _anthropic_chat(
                 return result
 
             if _should_retry_429(resp.status_code):
-                if attempt == _429_MAX_RETRIES - 1:
+                if attempt == max_retries - 1:
                     _log(1, f"  [Anthropic] HTTP 429 — max retries reached, giving up.")
                     return None
                 delay = _retry_delay(attempt)
-                _log(1, f"  [Anthropic] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{_429_MAX_RETRIES})")
+                _log(1, f"  [Anthropic] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{max_retries})")
                 _time.sleep(delay)
                 continue
 
@@ -295,6 +296,7 @@ def _gemini_chat(
     api_key: str,
     model: str = "gemini-2.5-flash",
     timeout: int = 120,
+    max_retries: int = 5,
 ) -> str | None:
     if not api_key:
         _log(1, "  [Gemini] No API key provided — skipping request.")
@@ -322,7 +324,7 @@ def _gemini_chat(
         if system_instruction:
             body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
 
-        for attempt in range(_429_MAX_RETRIES):
+        for attempt in range(max_retries):
             _log(2, f"  [Gemini] POST {model}:generateContent  body={json.dumps(body)[:2000]}")
             t0 = _time.time()
             resp = httpx.post(
@@ -358,11 +360,11 @@ def _gemini_chat(
                 return result
 
             if _should_retry_429(resp.status_code):
-                if attempt == _429_MAX_RETRIES - 1:
+                if attempt == max_retries - 1:
                     _log(1, f"  [Gemini] HTTP 429 — max retries reached, giving up.")
                     return None
                 delay = _retry_delay(attempt)
-                _log(1, f"  [Gemini] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{_429_MAX_RETRIES})")
+                _log(1, f"  [Gemini] HTTP 429 — throttled, retrying in {delay:.1f}s (attempt {attempt + 2}/{max_retries})")
                 _time.sleep(delay)
                 continue
 
@@ -391,6 +393,7 @@ def _llm_chat(
             api_key=provider_config.get("openai_api_key", ""),
             model=provider_config.get("openai_model", "gpt-4o-mini"),
             timeout=timeout,
+            max_retries=provider_config.get("openai_max_retries", 5),
         )
     if provider == "anthropic":
         return _anthropic_chat(
@@ -398,6 +401,7 @@ def _llm_chat(
             api_key=provider_config.get("anthropic_api_key", ""),
             model=provider_config.get("anthropic_model", "claude-3-haiku-20240307"),
             timeout=timeout,
+            max_retries=provider_config.get("anthropic_max_retries", 5),
         )
     if provider == "google":
         # Prefer config key, fall back to GEMINI_API_KEY env var (same as genai.Client())
@@ -407,6 +411,7 @@ def _llm_chat(
             api_key=api_key,
             model=provider_config.get("google_model", "gemini-2.5-flash"),
             timeout=timeout,
+            max_retries=provider_config.get("google_max_retries", 5),
         )
 
     # Default: Ollama

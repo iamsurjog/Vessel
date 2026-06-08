@@ -68,10 +68,13 @@ def _default_provider_config() -> dict:
         "ollama_model": "tinyllama:1.1b",
         "openai_api_key": "",
         "openai_model": "gpt-4o-mini",
+        "openai_max_retries": 5,
         "anthropic_api_key": "",
         "anthropic_model": "claude-3-haiku-20240307",
+        "anthropic_max_retries": 5,
         "google_api_key": "",
         "google_model": "gemini-2.5-flash",
+        "google_max_retries": 5,
     }
 
 
@@ -327,6 +330,18 @@ class VesselManager(QObject):
     def googleApiKey(self):
         return self._provider_config.get("google_api_key", "")
 
+    @Property(int, notify=providerConfigChanged)
+    def openaiMaxRetries(self):
+        return self._provider_config.get("openai_max_retries", 5)
+
+    @Property(int, notify=providerConfigChanged)
+    def anthropicMaxRetries(self):
+        return self._provider_config.get("anthropic_max_retries", 5)
+
+    @Property(int, notify=providerConfigChanged)
+    def googleMaxRetries(self):
+        return self._provider_config.get("google_max_retries", 5)
+
     @Property(str, notify=providerConfigChanged)
     def googleModel(self):
         return self._provider_config.get("google_model", "gemini-2.5-flash")
@@ -370,6 +385,27 @@ class VesselManager(QObject):
         self._provider_config["google_api_key"] = key
         _save_provider_config(self._provider_config)
         self.providerConfigChanged.emit()
+
+    @Slot(int)
+    def setOpenaiMaxRetries(self, retries):
+        if self._provider_config.get("openai_max_retries") != retries:
+            self._provider_config["openai_max_retries"] = retries
+            _save_provider_config(self._provider_config)
+            self.providerConfigChanged.emit()
+
+    @Slot(int)
+    def setAnthropicMaxRetries(self, retries):
+        if self._provider_config.get("anthropic_max_retries") != retries:
+            self._provider_config["anthropic_max_retries"] = retries
+            _save_provider_config(self._provider_config)
+            self.providerConfigChanged.emit()
+
+    @Slot(int)
+    def setGoogleMaxRetries(self, retries):
+        if self._provider_config.get("google_max_retries") != retries:
+            self._provider_config["google_max_retries"] = retries
+            _save_provider_config(self._provider_config)
+            self.providerConfigChanged.emit()
 
     @Slot(str)
     def setGoogleModel(self, model):

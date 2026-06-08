@@ -1282,7 +1282,7 @@ onClicked: {
     Popup {
         id: settingsPopup
         anchors.centerIn: parent
-        width: 480; height: 640; modal: true; focus: true
+        width: 560; height: 640; modal: true; focus: true
         closePolicy: Popup.CloseOnEscape
 
         background: Rectangle { color: bgCard; border.color: borderDark; radius: 8 }
@@ -1300,10 +1300,13 @@ onClicked: {
             ollamaModelField.text = vesselManager.ollamaModel
             geminiKeyField.text = vesselManager.googleApiKey
             googleModelField.text = vesselManager.googleModel
+            geminiRetryField.text = vesselManager.googleMaxRetries
             chatgptKeyField.text = vesselManager.openaiApiKey
             openaiModelField.text = vesselManager.openaiModel
+            openaiRetryField.text = vesselManager.openaiMaxRetries
             claudeKeyField.text = vesselManager.anthropicApiKey
             anthropicModelField.text = vesselManager.anthropicModel
+            anthropicRetryField.text = vesselManager.anthropicMaxRetries
         }
 
         function syncThemeFields() {
@@ -1324,10 +1327,13 @@ onClicked: {
             vesselManager.setOllamaModel(ollamaModelField.text.trim() || "tinyllama:1.1b")
             vesselManager.setGoogleApiKey(geminiKeyField.text)
             vesselManager.setGoogleModel(googleModelField.text.trim() || "gemini-2.5-flash")
+            vesselManager.setGoogleMaxRetries(parseInt(geminiRetryField.text) || 5)
             vesselManager.setOpenaiApiKey(chatgptKeyField.text)
             vesselManager.setOpenaiModel(openaiModelField.text.trim() || "gpt-4o-mini")
+            vesselManager.setOpenaiMaxRetries(parseInt(openaiRetryField.text) || 5)
             vesselManager.setAnthropicApiKey(claudeKeyField.text)
             vesselManager.setAnthropicModel(anthropicModelField.text.trim() || "claude-3-haiku-20240307")
+            vesselManager.setAnthropicMaxRetries(parseInt(anthropicRetryField.text) || 5)
             settingsPopup.close()
         }
 
@@ -1348,8 +1354,14 @@ onClicked: {
             syncThemeFields()
         }
 
-        Column {
-            anchors.fill: parent; anchors.margins: 25; spacing: 18
+        ScrollView {
+            id: settingsScroll
+            anchors.fill: parent; anchors.margins: 25
+            clip: true
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            Column {
+                width: settingsScroll.availableWidth; spacing: 18
 
             Text { text: "Settings"; color: textMain; font.pixelSize: 20; font.bold: true }
             Text { text: "Configure AI provider and API credentials."; color: textMuted; font.pixelSize: 12 }
@@ -1420,6 +1432,28 @@ onClicked: {
                         background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
                     }
                 }
+                // ── Gemini: max retries ──
+                Column { width: parent.width; spacing: 6
+                    Text { text: "Max Retries (on rate limit)"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                    SpinBox {
+                        id: geminiRetryField
+                        width: parent.width; height: 36
+                        from: 0; to: 20; value: 5
+                        editable: true
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                        contentItem: TextInput {
+                            text: geminiRetryField.textFromValue(geminiRetryField.value)
+                            color: textMain; font.pixelSize: 13
+                            horizontalAlignment: Text.AlignLeft; verticalAlignment: Text.AlignVCenter
+                            leftPadding: 10
+                            readOnly: !geminiRetryField.editable
+                            validator: geminiRetryField.validator
+                            onAccepted: geminiRetryField.value = parseInt(text) || 5
+                        }
+                        up.indicator: Rectangle { x: parent.width - width; y: 0; height: parent.height / 2; width: 24; color: parent.up.pressed ? activeBg : "transparent"; border.color: borderDark }
+                        down.indicator: Rectangle { x: parent.width - width; y: parent.height / 2; height: parent.height / 2; width: 24; color: parent.down.pressed ? activeBg : "transparent"; border.color: borderDark }
+                    }
+                }
             }
 
             // ── ChatGPT: API key ──
@@ -1456,6 +1490,28 @@ onClicked: {
                         background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
                     }
                 }
+                // ── ChatGPT: max retries ──
+                Column { width: parent.width; spacing: 6
+                    Text { text: "Max Retries (on rate limit)"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                    SpinBox {
+                        id: openaiRetryField
+                        width: parent.width; height: 36
+                        from: 0; to: 20; value: 5
+                        editable: true
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                        contentItem: TextInput {
+                            text: openaiRetryField.textFromValue(openaiRetryField.value)
+                            color: textMain; font.pixelSize: 13
+                            horizontalAlignment: Text.AlignLeft; verticalAlignment: Text.AlignVCenter
+                            leftPadding: 10
+                            readOnly: !openaiRetryField.editable
+                            validator: openaiRetryField.validator
+                            onAccepted: openaiRetryField.value = parseInt(text) || 5
+                        }
+                        up.indicator: Rectangle { x: parent.width - width; y: 0; height: parent.height / 2; width: 24; color: parent.up.pressed ? activeBg : "transparent"; border.color: borderDark }
+                        down.indicator: Rectangle { x: parent.width - width; y: parent.height / 2; height: parent.height / 2; width: 24; color: parent.down.pressed ? activeBg : "transparent"; border.color: borderDark }
+                    }
+                }
             }
 
             // ── Claude: API key ──
@@ -1490,6 +1546,28 @@ onClicked: {
                         color: textMain; font.pixelSize: 13
                         leftPadding: 10
                         background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                    }
+                }
+                // ── Claude: max retries ──
+                Column { width: parent.width; spacing: 6
+                    Text { text: "Max Retries (on rate limit)"; color: textMuted; font.pixelSize: 12; font.bold: true }
+                    SpinBox {
+                        id: anthropicRetryField
+                        width: parent.width; height: 36
+                        from: 0; to: 20; value: 5
+                        editable: true
+                        background: Rectangle { color: bgDark; border.color: borderDark; radius: 6 }
+                        contentItem: TextInput {
+                            text: anthropicRetryField.textFromValue(anthropicRetryField.value)
+                            color: textMain; font.pixelSize: 13
+                            horizontalAlignment: Text.AlignLeft; verticalAlignment: Text.AlignVCenter
+                            leftPadding: 10
+                            readOnly: !anthropicRetryField.editable
+                            validator: anthropicRetryField.validator
+                            onAccepted: anthropicRetryField.value = parseInt(text) || 5
+                        }
+                        up.indicator: Rectangle { x: parent.width - width; y: 0; height: parent.height / 2; width: 24; color: parent.up.pressed ? activeBg : "transparent"; border.color: borderDark }
+                        down.indicator: Rectangle { x: parent.width - width; y: parent.height / 2; height: parent.height / 2; width: 24; color: parent.down.pressed ? activeBg : "transparent"; border.color: borderDark }
                     }
                 }
             }
@@ -1676,4 +1754,5 @@ onClicked: {
             }
         }
     }
+}
 }

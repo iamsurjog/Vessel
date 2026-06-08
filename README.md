@@ -292,7 +292,23 @@ Configuration files are stored at:
 | `provider_config.json` | AI provider settings (provider, model, API keys) |
 | `theme_config.json` | UI theme colors |
 
+### Environment Variables
+
+| Variable | Value | Effect |
+|----------|-------|--------|
+| `VESSEL_LOG_LEVEL` | `0` (default) | Quiet — no extra output |
+| `VESSEL_LOG_LEVEL` | `1` | General — API errors, status codes, missing keys |
+| `VESSEL_LOG_LEVEL` | `2` | Highly specific — request/response bodies, pipeline timing |
+
+Set it before running:
+
+```bash
+VESSEL_LOG_LEVEL=2 python main.py
+```
+
 ---
+
+
 
 ## Tech Stack
 
